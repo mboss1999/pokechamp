@@ -1,0 +1,14 @@
+# Dependencies and the bundled local Node runtime
+node_modules/
+.tools/
+
+# Local backups, logs and machine-specific config
+.backup-*/
+*.log
+.claude/
+.DS_Store
+
+# Simulation output (regenerate with the pipeline; the app reads web/data/results.json)
+out/
+out-*/
+aws/.last-run*

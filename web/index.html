@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Champions Team Builder</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<header class="top">
+		<div class="brand">
+			<h1>Champions Team Builder</h1>
+			<p class="sub" id="meta">Loading simulation results…</p>
+		</div>
+		<nav class="tabs" role="tablist">
+			<button role="tab" data-tab="rankings" aria-selected="true">Rankings</button>
+			<button role="tab" data-tab="teams" aria-selected="false">Build teams <span class="count" id="owned-count">0</span></button>
+			<button role="tab" data-tab="draft" aria-selected="false">Draft practice</button>
+		</nav>
+	</header>
+
+	<main>
+		<section id="rankings" class="view">
+			<div class="toolbar">
+				<input id="search" type="search" placeholder="Search Pokémon, move, item…" autocomplete="off">
+				<select id="type-filter"><option value="">All types</option></select>
+				<select id="owned-filter">
+					<option value="all">All Pokémon</option>
+					<option value="owned">Owned only</option>
+					<option value="missing">Not owned</option>
+				</select>
+				<div class="spacer"></div>
+				<button id="own-visible" class="ghost">Own all shown</button>
+				<button id="clear-owned" class="ghost">Clear collection</button>
+				<button id="io-collection" class="ghost">Import / export</button>
+			</div>
+			<p class="hint">Tick the Pokémon you have. Ratings come from simulated bring-6-pick-3 battles; click a row for its sets and matchups.</p>
+			<div class="table-wrap">
+				<table id="ranking-table">
+					<thead>
+						<tr>
+							<th class="num">#</th>
+							<th class="own">Own</th>
+							<th>Pokémon</th>
+							<th>Tier</th>
+							<th class="num" title="Elo-style strength fitted from simulated team battles">Rating</th>
+							<th class="num" title="How often the AI chose to bring it when it was on the team">Picked</th>
+							<th class="num" title="Win rate of teams that brought it">Win %</th>
+							<th class="set-col">Best set</th>
+						</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
+			</div>
+		</section>
+
+		<section id="teams" class="view" hidden>
+			<div class="toolbar">
+				<label class="check"><input type="checkbox" id="include-megas" checked> Use Mega Evolutions</label>
+				<label>Max Megas per team
+					<select id="max-megas"><option>1</option><option selected>2</option><option>3</option></select>
+				</label>
+				<div class="spacer"></div>
+				<button id="build" class="primary">Build best teams</button>
+			</div>
+			<div id="team-results"></div>
+		</section>
+
+		<section id="draft" class="view" hidden>
+			<div class="toolbar">
+				<label>Your team <select id="dt-team"></select></label>
+				<label>Opponent
+					<select id="dt-opp">
+						<option value="random">Random meta team</option>
+						<option value="paste">Paste a team I met…</option>
+					</select>
+				</label>
+				<label>Analysis
+					<select id="dt-budget">
+						<option value="quick">Quick · ~2 min</option>
+						<option value="normal" selected>Normal · ~4 min</option>
+					</select>
+				</label>
+				<div class="spacer"></div>
+				<button id="dt-start" class="primary">Start drafting</button>
+			</div>
+			<textarea id="dt-team-paste" rows="10" spellcheck="false" placeholder="Paste your six in Showdown format" hidden></textarea>
+			<textarea id="dt-opp-paste" rows="4" spellcheck="false" placeholder="Opposing species, one per line (or a Showdown export)" hidden></textarea>
+			<p class="hint" id="dt-error"></p>
+			<p class="hint">You see only their species, as at team preview in Champions. Choose three (the first leads) and lock in.
+				The simulator analyses the matchup while you think, guessing their sets from the meta, then shows what your pick cost.
+				While you review a result, the next random matchup is already being analysed.</p>
+			<div id="dt-board"></div>
+			<div id="dt-history"></div>
+		</section>
+	</main>
+
+	<dialog id="io-dialog">
+		<form method="dialog">
+			<h2>Your collection</h2>
+			<p class="hint">One Pokémon per line. Paste a list to replace your collection, or copy this one to back it up.</p>
+			<textarea id="io-text" rows="14" spellcheck="false"></textarea>
+			<div class="dialog-actions">
+				<button value="cancel" class="ghost">Close</button>
+				<button id="io-apply" value="apply" class="primary">Replace collection</button>
+			</div>
+		</form>
+	</dialog>
+
+	<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "champions-team-builder",
+  "version": "1.0.0",
+  "description": "Pokémon Champions singles team builder driven by simulated battles",
+  "scripts": {
+    "start": "node web/serve.cjs",
+    "sim": "node sim/pipeline.js",
+    "sim:quick": "node sim/pipeline.js --scale 0.25 --passes 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pokemon-showdown": "file:vendor/pokemon-showdown"
+  },
+  "private": true
+}

@@ -1,0 +1,10 @@
+{
+  "name": "pokemon-showdown",
+  "version": "0.11.11-champions-mc",
+  "description": "Pokémon Showdown simulator, built from smogon/pokemon-showdown@d6014434",
+  "main": "dist/sim/index.js",
+  "license": "MIT",
+  "dependencies": {
+    "ts-chacha20": "^1.2.0"
+  }
+}
