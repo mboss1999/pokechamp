@@ -34,13 +34,90 @@ const HAZARDS = {stealthrock: 'stealthrock', spikes: 'spikes', toxicspikes: 'tox
 const SCREENS = {reflect: 'reflect', lightscreen: 'lightscreen', auroraveil: 'auroraveil'};
 const PHAZE = new Set(['roar', 'whirlwind', 'haze', 'clearsmog', 'dragontail', 'circlethrow']);
 
+// Damage estimates are pure functions of the battle state, and one decision asks for the same ones many times
+// (the foe's threat, each matchup score, the lookahead's candidate list). They are memoized per battle until
+// its state changes; every state change (a turn, a switch, a faint) appends to battle.log, which estDamage
+// itself never does, so the log length is the cache stamp.
+const damageMemo = new WeakMap();
+const CHECK_MEMO = !!process.env.CHECK_DAMAGE_MEMO; // debug: recompute every cached estimate and count mismatches
+let memoMismatches = 0;
+
+// Everything about a Pokémon that the damage formula can read. Species is unique per side (Species Clause), so
+// side + species identifies the set and its stats.
+function pokeKey(p) {
+	const b = p.boosts, side = p.side;
+	return `${side.n}${p.species.id}|${p.types.join('')}${p.addedType || ''}|${p.hp}|${p.status}|${p.item}|${p.ability}|${b.atk}${b.def}${b.spa}${b.spd}${b.spe}${b.accuracy}${b.evasion}|` +
+		`${Object.keys(p.volatiles).join(',')}|${p.timesAttacked}|${p.lastMove ? p.lastMove.id : ''}|${p.moveLastTurnResult}|` +
+		`${p.isActive ? 1 : 0}|${side.totalFainted}|${side.faintedLastTurn ? 1 : 0}|${Object.keys(side.sideConditions).join(',')}`;
+}
+// Field-wide effects, including the active Pokémon's abilities: auras (Fairy Aura) and Ruin abilities change
+// every Pokémon's damage, even a benched attacker's.
+function fieldKey(battle) {
+	const f = battle.field;
+	let k = `${f.weather}|${f.terrain}|${Object.keys(f.pseudoWeather).join(',')}`;
+	for (const side of battle.sides) for (const p of side.active) k += p ? `|${p.species.id}:${p.ability}` : '|-';
+	return k;
+}
+// The shared level only pays off inside the rollout AI's lookahead (sim/lookahead.js sets `active` for the length of
+// a decision), where many battle copies revisit the same positions. In plain heuristic battles it made each battle
+// ~13% slower and grew ~1.7 KB per entry: at the old 400k-entry cap ~690 MB per thread, which on a 64-thread machine
+// exhausted 128 GB of RAM (2026-11-15). Values are identical either way, so this changes no decision.
+const sharedMemo = {enabled: process.env.SHARED_DAMAGE_MEMO !== '0', active: false,
+	max: Number(process.env.SHARED_DAMAGE_MEMO_MAX) || 100000, map: new Map(), hits: 0, misses: 0};
+
 /** Expected damage (HP points) of `moveId` from src to tgt, without touching the battle's RNG or log. */
 function estDamage(battle, src, tgt, moveId) {
+	let memo = damageMemo.get(battle);
+	const stamp = battle.log.length;
+	if (!memo || memo.stamp !== stamp || memo.turn !== battle.turn) {
+		memo = {stamp, turn: battle.turn, map: new Map()};
+		damageMemo.set(battle, memo);
+	}
+	let bySrc = memo.map.get(src);
+	if (!bySrc) memo.map.set(src, bySrc = new Map());
+	let byTgt = bySrc.get(tgt);
+	if (!byTgt) bySrc.set(tgt, byTgt = new Map());
+	let dmg = byTgt.get(moveId);
+	if (dmg === undefined) {
+		if (sharedMemo.enabled && sharedMemo.active) {
+			// second level: the same matchup in another battle copy (the lookahead's simulations revisit the
+			// same Pokémon in the same condition constantly)
+			const k = `${moveId}|${pokeKey(src)}|${pokeKey(tgt)}|${fieldKey(battle)}`;
+			dmg = sharedMemo.map.get(k);
+			if (dmg === undefined) {
+				dmg = computeDamage(battle, src, tgt, moveId);
+				if (sharedMemo.map.size >= sharedMemo.max) sharedMemo.map.clear();
+				sharedMemo.map.set(k, dmg);
+				sharedMemo.misses++;
+			} else {
+				sharedMemo.hits++;
+				if (CHECK_MEMO) {
+					const fresh = computeDamage(battle, src, tgt, moveId);
+					if (fresh !== dmg) {
+						memoMismatches++;
+						if (memoMismatches <= 5) console.error('shared memo mismatch', k, dmg, fresh);
+					}
+				}
+			}
+		} else {
+			dmg = computeDamage(battle, src, tgt, moveId);
+		}
+		byTgt.set(moveId, dmg);
+	} else if (CHECK_MEMO) {
+		const fresh = computeDamage(battle, src, tgt, moveId);
+		if (fresh !== dmg) memoMismatches++;
+	}
+	return dmg;
+}
+
+function computeDamage(battle, src, tgt, moveId) {
 	const move = battle.dex.getActiveMove(moveId);
 	if (move.category === 'Status') return 0;
 	const savedPRNG = battle.prng, savedRand = battle.randomizer, savedAdd = battle.add;
 	const savedDebug = battle.debug, savedHint = battle.hint, savedAttrLast = battle.attrLastMove;
 	const savedMove = battle.activeMove, savedPoke = battle.activePokemon, savedTarget = battle.activeTarget;
+	// fresh dice on every call: an estimate must not depend on how many were made before it
+	scratchPRNG.setSeed('1,2,3,4');
 	battle.prng = scratchPRNG;
 	battle.randomizer = d => Math.floor(d * 0.925);
 	battle.add = battle.debug = battle.hint = battle.attrLastMove = noop;
@@ -135,6 +212,10 @@ function moveValue(battle, me, foe, moveId, ctx) {
 		if (move.priority > 0 && !ctx.iAmFaster && ctx.threatFrac >= 1) v += 0.2;
 		return v;
 	}
+	if (ctx.v2) {
+		const v = tacticalValue(battle, me, foe, move, ctx);
+		if (v !== undefined) return v;
+	}
 	const st = foe.status;
 	if (SETUP[move.id]) {
 		const boosts = SETUP[move.id];
@@ -204,6 +285,129 @@ function moveValue(battle, me, foe, moveId, ctx) {
 	}
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// v2 tactical valuations (agent 'heuristic2'). The v1 rules above give Protect 0.02 and Taunt/Encore a flat
+// 0.15, so the pilot almost never clicks them and the set search can't value them (sim/audit-moves.js,
+// 2026-11-14). These rules look at what the move actually achieves in the current position. Returns
+// undefined to fall back to the v1 rule.
+
+const PROTECT = new Set(['protect', 'detect', 'spikyshield', 'kingsshield', 'banefulbunker', 'silktrap', 'burningbulwark', 'obstruct']);
+
+/** HP fraction (of max HP) `p` loses at the end of a turn from status and volatiles, net of its own healing. */
+function residual(battle, p) {
+	let loss = 0;
+	const magic = p.hasAbility('magicguard');
+	if (!magic) {
+		if (p.status === 'brn') loss += 1 / 16;
+		if (p.status === 'psn' && !p.hasAbility('poisonheal')) loss += 1 / 8;
+		if (p.status === 'tox' && !p.hasAbility('poisonheal')) loss += Math.min(15, (p.statusState.stage || 0) + 1) / 16;
+		if (p.volatiles['leechseed']) loss += 1 / 8;
+		if (p.volatiles['saltcure']) loss += p.hasType('Water') || p.hasType('Steel') ? 1 / 4 : 1 / 8;
+		if (battle.field.isWeather('sandstorm') && !['Rock', 'Ground', 'Steel'].some(t => p.hasType(t)) &&
+			!p.hasAbility(['sandveil', 'sandrush', 'sandforce', 'overcoat'])) loss += 1 / 16;
+	}
+	if (p.hp < p.maxhp) {
+		if (p.item === 'leftovers') loss -= 1 / 16;
+		if (p.item === 'blacksludge' && p.hasType('Poison')) loss -= 1 / 16;
+		if (p.hasAbility('poisonheal') && (p.status === 'psn' || p.status === 'tox')) loss -= 1 / 8;
+		if (battle.field.isTerrain('grassyterrain') && p.isGrounded()) loss -= 1 / 16;
+	}
+	return loss;
+}
+
+const statusMoves = p => p.moveSlots.map(m => p.battle.dex.moves.get(m.id)).filter(m => m.category === 'Status');
+const aliveFoes = foe => foe.side.pokemon.filter(p => !p.fainted && p.hp > 0).length;
+
+// V2_OFF=protect,substitute,... turns rule groups back to v1 (for ablation studies)
+const V2_OFF = new Set((process.env.V2_OFF || '').split(',').filter(Boolean));
+const groupOf = move => PROTECT.has(move.id) ? 'protect' : SETUP[move.id] ? 'setup' : RECOVERY.has(move.id) ? 'recovery'
+	: PHAZE.has(move.id) ? 'phaze' : move.id;
+
+function tacticalValue(battle, me, foe, move, ctx) {
+	if (V2_OFF.size && V2_OFF.has(groupOf(move))) return undefined;
+	const hpFrac = me.hp / me.maxhp;
+	const subbed = !!me.volatiles['substitute'];
+	// foe's best hit as a fraction of my current HP; nothing gets through a Substitute that holds
+	const threat = subbed ? 0 : ctx.threatFrac;
+	const lastWasProtect = me.lastMove && PROTECT.has(me.lastMove.id) && me.moveLastTurnResult !== false;
+	if (PROTECT.has(move.id)) {
+		if (lastWasProtect) return 0;
+		let v = 0.02;
+		if (me.hasAbility('speedboost') && me.activeMoveActions === 0) v = 0.5;
+		// a free turn of residual damage on the foe (poison, burn, Leech Seed...) and of my own recovery
+		const net = residual(battle, foe) * foe.maxhp / Math.max(1, foe.hp) - residual(battle, me) * me.maxhp / Math.max(1, me.hp);
+		if (net > 0.04) v = Math.max(v, Math.min(0.55, 0.15 + 3 * net));
+		// block a first-turn Fake Out / First Impression
+		if (foe.activeMoveActions === 0 && foe.moveSlots.some(m => m.id === 'fakeout' || m.id === 'firstimpression')) v = Math.max(v, 0.3);
+		// stall out the last turn of the foe's screens / Trick Room / Tailwind is too fine for this pilot
+		return v;
+	}
+	if (move.id === 'substitute') {
+		if (subbed || me.hp <= me.maxhp / 4 || hpFrac < 0.5) return 0;
+		const foeStatus = statusMoves(foe).length;
+		// a Substitute pays off when it survives the foe's hit, most of all against status and setup users
+		if (ctx.threatFrac * hpFrac < 0.25) return foeStatus ? (ctx.iAmFaster ? 0.6 : 0.45) : 0.3;
+		return 0.03;
+	}
+	if (move.id === 'taunt') {
+		if (foe.volatiles['taunt']) return 0;
+		const n = statusMoves(foe).filter(m => !PROTECT.has(m.id)).length;
+		if (!n) return 0;
+		let v = 0.2 + 0.13 * n;
+		if (ctx.iAmFaster) v += 0.1;
+		if (threat >= 0.6) v *= 0.5;
+		return Math.min(v, 0.7);
+	}
+	if (move.id === 'encore') {
+		const last = foe.lastMove;
+		if (foe.volatiles['encore'] || !last || last.id === 'struggle' || foe.activeMoveActions === 0) return 0;
+		if (last.category === 'Status') return PROTECT.has(last.id) ? 0.5 : 0.75;
+		// locked into a weak attack
+		const dmg = estDamage(battle, foe, me, last.id) / me.maxhp;
+		return dmg < 0.15 ? 0.5 : 0;
+	}
+	if (move.id === 'disable') {
+		const last = foe.lastMove;
+		if (foe.volatiles['disable'] || !last || last.category === 'Status' || foe.activeMoveActions === 0) return 0;
+		const dmg = estDamage(battle, foe, me, last.id) / Math.max(1, me.hp);
+		return dmg >= threat * 0.9 && dmg > 0.3 ? Math.min(0.6, 0.3 * dmg + 0.2) : 0;
+	}
+	if (SETUP[move.id]) {
+		const boosts = SETUP[move.id];
+		if (move.id === 'bellydrum') return me.boosts.atk < 2 && hpFrac > 0.6 && threat < 0.4 ? 0.7 : 0;
+		const maxed = Object.entries(boosts).every(([k, n]) => me.boosts[k] + n > 6 || (k !== 'spe' && me.boosts[k] >= 4));
+		if (maxed) return 0;
+		// how much of a sweep is left to set up for, and whether I survive the turn I spend
+		const left = aliveFoes(foe);
+		if (threat < 0.45) return Math.min(0.85, 0.4 + 0.1 * left);
+		if (threat < 1 && boosts.spe && !ctx.iAmFaster) return 0.25;
+		return 0.03;
+	}
+	if (RECOVERY.has(move.id)) {
+		if (move.id === 'rest') return hpFrac < 0.35 && threat < 0.5 ? 0.45 : 0;
+		const heal = Math.min(0.5, 1 - hpFrac);
+		const incoming = ctx.threatFrac * hpFrac; // of max HP
+		if (heal < 0.2) return 0;
+		// recover only when it out-heals what the foe can do to me
+		if (incoming < heal) return Math.min(0.8, 0.25 + heal + (hpFrac < 0.5 ? 0.15 : 0));
+		return 0.05;
+	}
+	if (move.id === 'willowisp') {
+		if (foe.status || foe.hasType('Fire') || foe.hasAbility(['waterveil', 'waterbubble', 'thermalexchange', 'guts', 'comatose', 'purifyingsalt', 'magicbounce'])) return 0;
+		const best = bestDamage(battle, foe, me);
+		const phys = best.move && battle.dex.moves.get(best.move).category === 'Physical';
+		return phys ? 0.55 + Math.min(0.2, threat * 0.2) : 0.12;
+	}
+	if (PHAZE.has(move.id) && move.category === 'Status') {
+		if (Object.values(foe.boosts).some(b => b > 0)) return 0.7;
+		const benched = foe.side.pokemon.filter(p => !p.fainted && !p.isActive).length;
+		const sc = foe.side.sideConditions;
+		if ((move.id === 'roar' || move.id === 'whirlwind') && benched && (sc.stealthrock || sc.spikes)) return 0.3;
+		return 0;
+	}
+	return undefined;
+}
+
 function chooseSwitchTarget(battle, side, foe) {
 	let best = null, bestScore = -Infinity;
 	for (let i = 0; i < side.pokemon.length; i++) {
@@ -215,7 +419,7 @@ function chooseSwitchTarget(battle, side, foe) {
 	return best === null ? null : {slot: best + 1, score: bestScore};
 }
 
-function chooseMove(battle, side) {
+function chooseMove(battle, side, opts = {}) {
 	const req = side.activeRequest;
 	const me = side.active[0];
 	const foe = side.foe.active[0];
@@ -227,6 +431,7 @@ function chooseMove(battle, side) {
 		iAmFaster: outspeeds(battle, me, foe),
 		threatFrac: threat.frac,
 		benchCount: bench.length,
+		v2: !!opts.v2,
 	};
 	let best = null, bestV = -1;
 	active.moves.forEach((m, i) => {
@@ -255,7 +460,7 @@ function chooseMove(battle, side) {
 }
 
 /** Return the choice string for this side's pending request, or null when nothing is pending. */
-function decide(battle, side) {
+function decide(battle, side, opts = {}) {
 	const req = side.activeRequest;
 	if (!req || req.wait) return null;
 	if (req.teamPreview) return chooseTeamPreview(battle, side);
@@ -264,7 +469,16 @@ function decide(battle, side) {
 		const target = chooseSwitchTarget(battle, side, foe && !foe.fainted ? foe : null);
 		return target ? `switch ${target.slot}` : 'pass';
 	}
-	return chooseMove(battle, side);
+	return chooseMove(battle, side, opts);
 }
+const decideV2 = (battle, side) => decide(battle, side, {v2: true});
 
-module.exports = {decide, estDamage, bestDamage, matchupScore, moveValue, outspeeds};
+// Status moves the pilot has a rule for (anything else scores a flat 0.05 and is effectively never used, so the
+// set search doesn't spend battles on it).
+const RULED = new Set(['willowisp', 'thunderwave', 'glare', 'stunspore', 'toxic', 'poisonpowder', 'leechseed', 'substitute',
+	'taunt', 'encore', 'disable', 'trick', 'switcheroo', 'trickroom', 'painsplit', 'destinybond', 'defog', 'partingshot',
+	'sunnyday', 'raindance', 'sandstorm', 'snowscape']);
+const knownStatus = id => !!(SETUP[id] || RECOVERY.has(id) || SLEEP.has(id) || HAZARDS[id] || SCREENS[id] || PHAZE.has(id) ||
+	PROTECT.has(id) || RULED.has(id));
+
+module.exports = {knownStatus, decideV2, tacticalValue, memoMismatches: () => memoMismatches, sharedMemo, decide, estDamage, bestDamage, matchupScore, moveValue, outspeeds};

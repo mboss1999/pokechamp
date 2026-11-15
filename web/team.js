@@ -22,7 +22,8 @@ export function threatWeights(entries, temperature = 120) {
 }
 
 // You bring 3 of your 6, and a threat is rarely beaten by one perfect counter, so a team's answer to a
-// threat is a weighted blend of its three best 1v1 matchups against it.
+// threat is a weighted blend of its three best 1v1 matchups against it. Only one Pokémon per side can Mega
+// Evolve in a battle, and the 1v1 rates assume a Stone holder always does, so at most one of the three may be a Mega.
 const ANSWER_WEIGHTS = [0.5, 0.3, 0.2];
 
 export function makeScorer(results, opts = {}) {
@@ -32,12 +33,20 @@ export function makeScorer(results, opts = {}) {
 	const strength = entries.map(e => (e.rating - 1500) / 100);
 	const RATING_WEIGHT = opts.ratingWeight ?? 0.06;
 
+	const isMega = entries.map(e => !!e.megaItem);
+
+	/** The three best answers to threat t, using at most one Mega. */
 	function topAnswers(members, t) {
-		let a = 0, b = 0, c = 0;
+		let a = 0, b = 0, c = 0, mega = 0;
 		for (const m of members) {
 			const p = M[m * N + t];
+			if (isMega[m]) { if (p > mega) mega = p; continue; }
 			if (p > a) { c = b; b = a; a = p; } else if (p > b) { c = b; b = p; } else if (p > c) c = p;
 		}
+		// the best Mega takes a slot only if it beats the third-best non-Mega
+		if (mega > a) return [mega, a, b];
+		if (mega > b) return [a, mega, b];
+		if (mega > c) return [a, b, mega];
 		return [a, b, c];
 	}
 	const blend = ([a, b, c]) => ANSWER_WEIGHTS[0] * a + ANSWER_WEIGHTS[1] * b + ANSWER_WEIGHTS[2] * c;
@@ -67,7 +76,10 @@ export function makeScorer(results, opts = {}) {
 		const order = entries.map((e, i) => i).sort((a, b) => W[b] - W[a]).slice(0, top);
 		return order.map(t => {
 			const answers = members.map(m => ({m, p: M[m * N + t]})).sort((a, b) => b.p - a.p);
-			return {threat: t, weight: W[t], best: answers[0], second: answers[1]};
+			const best = answers[0];
+			// one Mega per battle: if the best answer is a Mega, the second must not be
+			const second = answers.slice(1).find(x => !(best && isMega[best.m] && isMega[x.m]));
+			return {threat: t, weight: W[t], best, second};
 		});
 	}
 
@@ -88,13 +100,13 @@ function rngFrom(seed) {
  * Find the best teams buildable from the owned species.
  * @param results   results.json
  * @param owned     Set of species names the player owns
- * @param opts      {maxMegas, teams, restarts, includeMegas}
+ * @param opts      {teams, restarts, includeMegas, maxMegas (optional cap; the scorer already allows one Mega per battle)}
  * @returns [{members: entryIndex[], score}]
  */
 export function buildTeams(results, owned, opts = {}) {
 	const {entries} = results;
 	const scorer = opts.scorer || makeScorer(results, opts);
-	const maxMegas = opts.maxMegas ?? 2;
+	const maxMegas = opts.maxMegas ?? Infinity;
 	const size = 6;
 	const pool = entries.map((e, i) => i).filter(i => owned.has(entries[i].species) &&
 		(opts.includeMegas !== false || !entries[i].megaItem));

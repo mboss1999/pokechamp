@@ -106,30 +106,62 @@ function renderSetup() {
 
 // ------------------------------------------------------------------ analysis jobs
 
+/** POST to the simulator, then poll the job until it stops running, updating handle.job as it goes. */
+async function runJob(handle, url, body) {
+	const notify = () => handle.listeners.forEach(f => f());
+	try {
+		const resp = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+		const out = await resp.json().catch(() => ({}));
+		if (!resp.ok) throw new Error(out.error || `Simulator unavailable (HTTP ${resp.status}). Start the app with ./start.sh.`);
+		handle.jobId = out.jobId;
+		for (;;) {
+			await new Promise(r => setTimeout(r, 1000));
+			handle.job = await (await fetch(`api/draft/${out.jobId}`)).json();
+			notify();
+			if (handle.job.status !== 'running') break;
+		}
+	} catch (e) {
+		handle.job = {status: 'error', error: e.message};
+		notify();
+	}
+}
+
 /** Ask the server to analyse a matchup; returns a handle whose .job updates as it runs. */
 function startAnalysis(team, theirs, budget) {
 	const handle = {job: {status: 'running', progress: 0}, listeners: new Set()};
-	const notify = () => handle.listeners.forEach(f => f());
-	handle.done = (async () => {
-		try {
-			const body = {theirs, budget};
-			if (team.paste) body.minePaste = team.paste;
-			else body.mine = team.members.map(m => ({entryId: m.entry.id, set: m.set}));
-			const resp = await fetch('api/draft', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-			const out = await resp.json().catch(() => ({}));
-			if (!resp.ok) throw new Error(out.error || `Simulator unavailable (HTTP ${resp.status}). Start the app with ./start.sh.`);
-			for (;;) {
-				await new Promise(r => setTimeout(r, 1000));
-				handle.job = await (await fetch(`api/draft/${out.jobId}`)).json();
-				notify();
-				if (handle.job.status !== 'running') break;
-			}
-		} catch (e) {
-			handle.job = {status: 'error', error: e.message};
-			notify();
-		}
-	})();
+	const body = {theirs, budget};
+	if (team.paste) body.minePaste = team.paste;
+	else body.mine = team.members.map(m => ({entryId: m.entry.id, set: m.set}));
+	handle.done = runJob(handle, 'api/draft', body);
 	return handle;
+}
+
+/** Index of a (lead, back pair) pick in the server's option list (sim/draft.js options()). */
+function optionIndex(selected, n) {
+	const [lead, ...back] = selected;
+	back.sort((a, b) => a - b);
+	let k = 0;
+	for (let l = 0; l < n; l++) {
+		const rest = [...Array(n).keys()].filter(x => x !== l);
+		for (let a = 0; a < rest.length; a++) for (let b = a + 1; b < rest.length; b++, k++) {
+			if (l === lead && rest[a] === back[0] && rest[b] === back[1]) return k;
+		}
+	}
+	return -1;
+}
+
+/**
+ * A strong analysis values only the contested corner of the matchup. If the pick is outside it, ask the
+ * strong AI to grade it too (about half a minute).
+ */
+function ensureGraded(d) {
+	const j = d.analysis.job;
+	if (j.status !== 'done' || !j.result.strong || pickedOption(d, j.result) || d.grading) return false;
+	d.grading = true;
+	d.analysis.job = {status: 'running', progress: 0, message: 'Grading your pick with the strong AI…', grading: true};
+	runJob(d.analysis, `api/draft/${d.analysis.jobId}/grade`, {option: optionIndex(d.selected, d.team.mons.length)})
+		.then(() => { d.grading = false; });
+	return true;
 }
 
 function newDrill(team, opp, budget) {
@@ -146,14 +178,14 @@ function onAnalysisUpdate(d) {
 		if (el) el.innerHTML = progressHtml(d);
 		return;
 	}
-	if (d.locked && d.analysis.job.status === 'done') record(d);
+	if (d.locked && d.analysis.job.status === 'done' && !ensureGraded(d)) record(d);
 	renderBoard();
 	prepareNext();
 }
 
 /** Once the current analysis is finished, start the next random matchup so it's ready when you are. */
 function prepareNext() {
-	if (!drill || !drill.random || drill.analysis.job.status === 'running' || next) return;
+	if (!drill || !drill.random || drill.analysis.job.status === 'running' || drill.grading || next) return;
 	next = newDrill(drill.team, {list: randomMetaSpecies(), random: true}, drill.budget);
 }
 
@@ -211,7 +243,7 @@ function makeLead(slot) {
 function lockIn() {
 	if (drill.selected.length !== 3) return;
 	drill.locked = true;
-	if (drill.analysis.job.status === 'done') record(drill);
+	if (drill.analysis.job.status === 'done' && !ensureGraded(drill)) record(drill);
 	renderBoard();
 }
 
@@ -239,8 +271,8 @@ const pts = x => `${(x * 100).toFixed(1)}`;
 function progressHtml(d) {
 	const j = d.analysis.job;
 	if (j.status === 'error') return `<span class="bad">${esc(j.error)}</span>`;
-	if (j.status === 'done') return `Analysis ready (${j.result.battles.toLocaleString()} battles in ${j.seconds}s).`;
-	return `<span>Simulating team preview in the background… ${Math.round((j.progress || 0) * 100)}%</span>
+	if (j.status === 'done') return `Analysis ready (${j.result.battles.toLocaleString()} battles${j.result.strong ? `, ${j.result.strongBattles.toLocaleString()} of them by the strong AI` : ''}${j.seconds ? ` in ${j.seconds}s` : ''}).`;
+	return `<span>${j.grading ? 'Grading your pick with the strong AI…' : 'Simulating team preview in the background…'} ${Math.round((j.progress || 0) * 100)}%</span>
 		<div class="bar"><div style="width:${Math.round((j.progress || 0) * 100)}%"></div></div>`;
 }
 
@@ -287,7 +319,7 @@ function renderBoard() {
 
 function verdictHtml(d) {
 	const j = d.analysis.job;
-	if (j.status === 'running') return `<div class="card"><b>Locked in.</b> Waiting for the analysis to finish…</div>`;
+	if (j.status === 'running') return `<div class="card"><b>Locked in.</b> ${j.grading ? 'Your pick is outside the options the strong AI analysed first, so it is grading it now…' : 'Waiting for the analysis to finish…'}</div>`;
 	if (j.status !== 'done') return '';
 	const res = j.result;
 	const o = pickedOption(d, res);
@@ -304,7 +336,7 @@ function verdictHtml(d) {
 		<div class="verdict-head"><span class="verdict-label ${v.cls}">${v.label}</span>
 			<span>Your pick (${nameOf(o.option)}) wins about <b>${pct(o.value)}</b>; the best pick wins about <b>${pct(best.value)}</b>.
 			${o.loss > 0.001 ? `It costs ${pts(o.loss)} ± ${pts(1.96 * o.lossSe)} points${noisy ? ' (within the simulation’s noise)' : ''}.` : ''}
-			Rank ${rank} of ${res.options.length}.</span></div>
+			Rank ${rank} of ${res.options.length}${res.strong ? ' analysed options' : ''}.</span></div>
 		<p class="hint">Against an opponent who picks well, the best play mixes ${support.length > 1 ? 'these options; they are equally good' : 'nothing: one option is best'}:
 			${support.map(x => `${nameOf(x.option)} (${pct(x.mix)})`).join(' · ')}</p>
 		<div class="verdict-grid">
@@ -323,7 +355,9 @@ function verdictHtml(d) {
 				</tbody></table>
 			</div>
 		</div>
-		<p class="hint">Win rates come from ${res.battles.toLocaleString()} simulated battles with their sets guessed from the meta.
+		<p class="hint">Win rates come from ${res.battles.toLocaleString()} simulated battles with their sets guessed from the meta${res.strong
+			? `. The fast AI screened every pairing, then the strong (rollout) AI played the ${res.strongBattles.toLocaleString()} battles behind these numbers, between your most promising picks and their most dangerous replies`
+			: ', all piloted by the fast heuristic AI, which misjudges some drafts by a couple of points (use Strong for verdicts you can trust)'}.
 			± is a 95% range. Differences of a few points are within the noise at this budget.</p>
 		<div class="draft-actions">
 			<button class="primary" id="dt-next">${drill.random ? 'Next matchup' : 'New random matchup'}</button>

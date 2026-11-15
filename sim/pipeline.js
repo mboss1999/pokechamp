@@ -28,11 +28,27 @@ const PASSES = Number(arg('passes', 2));
 // heuristic ~63% head-to-head but is ~75x slower per battle). --agent sets the default for every stage;
 // --sets-agent, --matchups-agent and --ladder-agent override it. See sim/battle.js and sim/compare.js.
 const AGENT = arg('agent', 'heuristic');
-const agentsFor = stage => { const a = arg(stage + '-agent', AGENT); return [a, a]; };
+// The sets stage defaults to heuristic2 (v2 tactical rules), which values status moves the v1 pilot ignores.
+const agentsFor = stage => { const a = arg(stage + '-agent', stage === 'sets' ? arg('agent', 'heuristic2') : AGENT); return [a, a]; };
+// Set search: 'descent' (sim/setsearch.js: every move slot, item, ability and spread raced with paired
+// battles and confirmed on fresh ones) or 'halving' (the old random hill climb, kept for comparison).
+const SEARCH = arg('search', 'descent');
+// Stronger pilot that checks each searched set against its starting point ('none' to skip).
+const SETS_CHECK = arg('sets-check-agent', 'rollout4all');
+// Optional rating weights for drawing partners and opponents (a results.json); uniform without.
+const WEIGHTS = arg('weights', '');
 const SETS_AGENTS = agentsFor('sets'), MATCHUPS_AGENTS = agentsFor('matchups'), LADDER_AGENTS = agentsFor('ladder');
 // Sample sizes for the two big stages, if you want them independent of --scale.
 const MATCHUP_K = Number(arg('matchup-k', 0));
 const LADDER_GAMES = Number(arg('ladder-games', 0));
+// Sharding across machines (sim/shard.js): --shard k/N runs only this machine's part of each stage (entries
+// with index % N === k for sets; the k-th slice of the battles for matchups and ladder, saved as parts), and
+// --parts N combines N saved parts of matchups / ladder instead of playing them.
+const SHARD = arg('shard', '') ? (([k, m]) => ({k: Number(k), n: Number(m)}))(arg('shard').split('/')) : null;
+const PARTS = Number(arg('parts', 0));
+// Starting sets from an earlier run's results.json: they seed the population (so partners and opponents are
+// realistic from the start) and join the archetype candidates in the first pass.
+const INIT_SETS = arg('init-sets', '');
 const WEB_OUT = path.resolve(arg('web', path.join(__dirname, '..', 'web', 'data', 'results.json')));
 fs.mkdirSync(OUT, {recursive: true});
 
@@ -117,13 +133,49 @@ async function runResumable(pool, name, jobs, slice = 4000) {
 	return results;
 }
 
+/**
+ * Play `jobs` (all of them), or with --shard only this machine's slice, saved as `<name>.part<k>.json` (and
+ * null returned); with --parts N, load the N saved slices instead of playing anything.
+ */
+async function playStage(pool, name, jobs) {
+	const slice = k => [Math.floor(k * jobs.length / (SHARD || {n: PARTS}).n), Math.floor((k + 1) * jobs.length / (SHARD || {n: PARTS}).n)];
+	if (SHARD) {
+		const [lo, hi] = slice(SHARD.k);
+		log(`${name}: shard ${SHARD.k}/${SHARD.n} plays battles ${lo}-${hi} of ${jobs.length}`);
+		save(`${name}.part${SHARD.k}.json`, await runResumable(pool, `${name}.shard${SHARD.k}`, jobs.slice(lo, hi)));
+		return null;
+	}
+	if (PARTS) {
+		const res = [];
+		for (let k = 0; k < PARTS; k++) {
+			const part = load(`${name}.part${k}.json`);
+			const [lo, hi] = slice(k);
+			if (!part || part.length !== hi - lo) throw new Error(`${name}.part${k}.json missing or wrong size`);
+			for (const r of part) res.push(r); // not push(...part): a slice can exceed the call-stack argument limit
+		}
+		return res;
+	}
+	return runResumable(pool, name, jobs);
+}
+
 // ---------------------------------------------------------------- stage: sets
 
 async function stageSets(pool) {
 	const state = load('sets.json') || {};
 	const cands = new Map();
 	for (const e of entries) cands.set(e.id, S.candidateSets(e));
-	const pop = new Map(entries.map(e => [e.id, state[e.id]?.best || cands.get(e.id)[0]]));
+	const init = new Map();
+	if (INIT_SETS) {
+		const {toPokemonSet} = require('./refine');
+		const {setKey} = require('./util');
+		const keyed = s => { s.key = setKey(s); return s; };
+		for (const e of JSON.parse(fs.readFileSync(path.resolve(INIT_SETS), 'utf8')).entries) {
+			if (!byId.has(e.id)) continue;
+			init.set(e.id, {best: keyed(toPokemonSet(e, e.set)), alts: e.alts.map(a => keyed(toPokemonSet(e, a)))});
+		}
+		log(`sets: ${init.size} starting sets from ${INIT_SETS}`);
+	}
+	const pop = new Map(entries.map(e => [e.id, state[e.id]?.best || init.get(e.id)?.best || cands.get(e.id)[0]]));
 	const popSets = id => [pop.get(id)];
 
 	async function evaluate(entry, candidates, games, rng, stats) {
@@ -169,6 +221,46 @@ async function stageSets(pool) {
 		return st ? (st.w + 1) / (st.g + 2) : 0;
 	};
 
+	// descent: partners (each with its alternative sets, for Item Clause) and opponents from the population
+	const popAlts = new Map(entries.map(e => [e.id, state[e.id] ? (state[e.id].alts || []).map(a => a.set) : init.get(e.id)?.alts || []]));
+	const weightOf = (() => {
+		if (!WEIGHTS) return () => 1;
+		const prev = JSON.parse(fs.readFileSync(path.resolve(WEIGHTS), 'utf8'));
+		const r = new Map(prev.entries.map(e => [e.id, e.rating]));
+		return id => Math.exp(((r.get(id) ?? 1500) - 1500) / 120);
+	})();
+	const wList = entries.map(e => weightOf(e.id)), wTotal = wList.reduce((a, b) => a + b, 0);
+	const drawEntry = rng => {
+		let r = rng() * wTotal;
+		for (let i = 0; i < entries.length; i++) if ((r -= wList[i]) <= 0) return entries[i];
+		return entries[entries.length - 1];
+	};
+	const optionsOf = id => [pop.get(id), ...(popAlts.get(id) || [])].map(clean);
+	const context = (rng, subject) => {
+		const species = new Set([subject.species]), used = new Set(), partners = [];
+		for (let guard = 0; partners.length < 2 && guard < 1000; guard++) {
+			const e = drawEntry(rng);
+			if (species.has(e.species)) continue;
+			const opts = optionsOf(e.id).filter(x => !x.item || !used.has(x.item));
+			if (!opts.length) continue;
+			species.add(e.species); used.add(opts[0].item); partners.push(opts);
+		}
+		const oppSpecies = new Set(), oppItems = new Set(), opps = [];
+		for (let guard = 0; opps.length < 6 && guard < 1000; guard++) {
+			const e = drawEntry(rng);
+			if (oppSpecies.has(e.species)) continue;
+			const x = optionsOf(e.id).find(o => !o.item || !oppItems.has(o.item));
+			if (!x) continue;
+			oppSpecies.add(e.species); oppItems.add(x.item); opps.push(x);
+		}
+		return {partners, opps};
+	};
+	const {SetSearch} = require('./setsearch');
+	const descent = new SetSearch({
+		pool, context, agent: SETS_AGENTS[0], checkAgent: SETS_CHECK === 'none' ? null : SETS_CHECK, scale: SCALE,
+		rounds: Number(arg('rounds', 3)), log: m => log('  ' + m),
+	});
+
 	// progress = {pass, done: ids finished in that pass}; lets a restarted run skip finished work
 	const progress = load('sets.progress.json') || {pass: 1, done: []};
 	const saveAll = () => { save('sets.json', state); save('sets.progress.json', progress); };
@@ -178,14 +270,31 @@ async function stageSets(pool) {
 		if (finished.size) log(`sets: resuming pass ${pass} with ${finished.size} entries already done`);
 		log(`sets: pass ${pass}/${PASSES} over ${entries.length} entries`);
 		let done = finished.size;
-		await mapLimit(entries.filter(e => !finished.has(e.id)), Number(arg('concurrency', 32)), async entry => {
+		const mine = entries.filter((e, i) => !SHARD || i % SHARD.n === SHARD.k);
+		if (SHARD) log(`sets: shard ${SHARD.k}/${SHARD.n} runs ${mine.length} entries`);
+		await mapLimit(mine.filter(e => !finished.has(e.id)), Number(arg('concurrency', 32)), async entry => {
 			const rng = mulberry32(hash(entry.id) + pass * 7919);
 			const stats = new Map();
 			let pool0 = cands.get(entry.id);
 			if (pass > 1 && state[entry.id]) pool0 = [state[entry.id].best, ...state[entry.id].alts.map(a => a.set)];
+			else if (init.has(entry.id)) pool0 = [init.get(entry.id).best, ...init.get(entry.id).alts, ...pool0];
 			// dedupe by key
 			pool0 = pool0.filter((s, i, arr) => arr.findIndex(t => t.key === s.key) === i);
 			let ranked = await halving(entry, pool0, [n(12), n(24), n(48)], rng, stats);
+			if (SEARCH === 'descent') {
+				// coordinate descent from the archetype screen's winner
+				const r = await descent.search(entry, ranked[0], pass);
+				state[entry.id] = {best: r.best, wr: r.wr, alts: r.alts, history: r.history, check: r.check, candidates: pool0.length, pass};
+				pop.set(entry.id, r.best);
+				popAlts.set(entry.id, r.alts.map(a => a.set));
+				finished.add(entry.id);
+				if (++done % 10 === 0) {
+					log(`  ${done}/${mine.length} (${pool.battles} battles so far)`);
+					progress.pass = pass; progress.done = [...finished];
+					saveAll();
+				}
+				return;
+			}
 			// hill climb around the leader
 			for (let step = 0; step < 2; step++) {
 				const leader = ranked[0];
@@ -204,7 +313,7 @@ async function stageSets(pool) {
 				if (alts.some(a => a.set.item === s.item)) continue;
 				alts.push({set: s, wr: +wr(stats, s).toFixed(4), games: stats.get(s.key).g});
 			}
-			state[entry.id] = {best: alts[0].set, wr: alts[0].wr, alts: alts.slice(1), candidates: all.length};
+			state[entry.id] = {best: alts[0].set, wr: alts[0].wr, alts: alts.slice(1), candidates: all.length, pass};
 			pop.set(entry.id, alts[0].set);
 			finished.add(entry.id);
 			if (++done % 25 === 0) {
@@ -238,7 +347,8 @@ async function stageMatchups(pool, sets) {
 			}
 		}
 	}
-	const res = await runResumable(pool, 'matchups', jobs);
+	const res = await playStage(pool, 'matchups', jobs);
+	if (!res) return null;
 	// Matchup value in [0, 1]: a win scores 0.5 + half the winner's remaining HP, a loss 0.5 - half the
 	// opponent's remaining HP. So 1.0 = untouched sweep, 0.5 = coin flip, 0.0 = swept.
 	const wins = new Float32Array(N * N), games = new Float32Array(N * N);
@@ -295,7 +405,8 @@ async function stageLadder(pool, sets) {
 		teams.push([A, B]);
 		jobs.push({a: teamFrom(A, setsOf), b: teamFrom(B, setsOf), seed: seedFrom(rng), picks: true, agents: LADDER_AGENTS});
 	}
-	const res = await runResumable(pool, 'ladder', jobs);
+	const res = await playStage(pool, 'ladder', jobs);
+	if (!res) return null;
 	const stats = ids.map(() => ({brought: 0, picked: 0, pickedWins: 0}));
 	const games = [];
 	res.forEach((r, g) => {
@@ -359,8 +470,13 @@ function stageExport(sets, matchups, ladder) {
 
 (async () => {
 	const t0 = Date.now();
-	const pool = new Pool();
-	log(`agents=${SETS_AGENTS[0]}/${MATCHUPS_AGENTS[0]}/${LADDER_AGENTS[0]} scale=${SCALE} stages=${STAGES} entries=${entries.length} workers=${pool.workers.length}`);
+	// --pool lambda plays every battle on AWS Lambda (aws/lambda-deploy.sh) instead of this machine's cores
+	const pool = arg('pool', 'local') === 'lambda'
+		? new (require('./lambdapool').LambdaPool)({concurrency: Number(arg('lambda-concurrency', 700))}) : new Pool();
+	// memory diagnostics every 2 minutes (a 64-thread machine has run out of RAM before)
+	const memTimer = pool.memStats ? setInterval(() => log(`[mem] ${pool.memStats()}`), 120000) : null;
+	if (memTimer) memTimer.unref();
+	log(`search=${SEARCH} check=${SETS_CHECK} agents=${SETS_AGENTS[0]}/${MATCHUPS_AGENTS[0]}/${LADDER_AGENTS[0]} scale=${SCALE} stages=${STAGES} entries=${entries.length} workers=${pool.size}`);
 	try {
 		let sets = load('sets.json');
 		if (STAGES.includes('sets')) sets = await stageSets(pool);

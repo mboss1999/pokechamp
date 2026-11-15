@@ -15,7 +15,10 @@
 #      INSTANCE_TYPE (default c7g.16xlarge, 64 Graviton vCPUs), MAX_HOURS (hard stop, default 4),
 #      SPOT=0 for on-demand.
 #      COMMAND: run this instead of the pipeline (from the code folder; write outputs to out/, which starts as a
-#      copy of bench/ and is uploaded like pipeline checkpoints).
+#      copy of bench/ and is uploaded like pipeline checkpoints). It sees RUN_OUT (the run's s3://.../out URL) and
+#      RUN_REGION in its environment, for uploading results sooner than the 5-minute checkpoints.
+#      EXTRA_FILES: more repo-relative files to ship with the code (space separated), e.g. a COMMAND's input.
+#      KEEP_LAST_RUN=1 leaves aws/.last-run alone (for runs started by the app rather than by hand).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,7 +37,7 @@ PIPELINE_ARGS="--agent $AGENT --scale $SCALE --passes $PASSES"
 RESUME_RUN="${RESUME_RUN:-}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-c7g.16xlarge}"
 MAX_HOURS="${MAX_HOURS:-4}"
-RUN_ID="$(date -u +%Y%m%d-%H%M%S)"
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)}"
 PREFIX="runs/$RUN_ID"
 
 case "$INSTANCE_TYPE" in
@@ -53,6 +56,7 @@ TMP="$(mktemp -d)"
 EXTRA=()
 [ -d bench ] && EXTRA+=(bench)
 [ -f web/data/results.json ] && EXTRA+=(web/data/results.json)
+for f in ${EXTRA_FILES:-}; do EXTRA+=("$f"); done
 tar czf "$TMP/code.tgz" package.json package-lock.json sim vendor "${EXTRA[@]}"
 COMMAND="${COMMAND:-node --max-old-space-size=40000 sim/pipeline.js $PIPELINE_ARGS --out out --web out/results.json}"
 aws s3 cp --quiet "$TMP/code.tgz" "s3://$BUCKET/$PREFIX/code.tgz"
@@ -80,6 +84,7 @@ mkdir -p out
 [ -d bench ] && cp -r bench/. out/
 [ -n "$RESUME_RUN" ] && aws s3 sync s3://$BUCKET/runs/$RESUME_RUN/out out --region $REGION
 echo "running" | aws s3 cp - s3://$BUCKET/$PREFIX/status --region $REGION
+export RUN_OUT=s3://$BUCKET/$PREFIX/out RUN_REGION=$REGION
 # upload checkpoints every 5 minutes so a Spot interruption doesn't lose everything
 ( while sleep 300; do
 	# diagnostics (never allowed to break the checkpoint loop): memory mappings and memory use of the pipeline
@@ -110,5 +115,5 @@ INSTANCE_ID="$(aws ec2 run-instances --region "$REGION" \
 	--query 'Instances[0].InstanceId' --output text)"
 rm -rf "$TMP"
 
-echo "$RUN_ID" > aws/.last-run
+[ -n "${KEEP_LAST_RUN:-}" ] || echo "$RUN_ID" > aws/.last-run
 echo "Launched $INSTANCE_ID. Check progress with: aws/status.sh   Fetch results with: aws/fetch.sh"

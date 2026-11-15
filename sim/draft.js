@@ -76,8 +76,10 @@ function runJob(job) {
  * sample s means the same opponent sets and dice everywhere, so any two cells can be compared pairwise.
  */
 class DraftMatrix {
-	constructor(pool, mine, theirSpecies, {policy = 'heuristic', resultsPath = DEFAULT_RESULTS, salt = 0} = {}) {
-		Object.assign(this, {pool, mine, theirSpecies, policy, resultsPath});
+	constructor(pool, mine, theirSpecies, {policy = 'heuristic2', resultsPath = DEFAULT_RESULTS, salt = 0, jobBattles} = {}) {
+		// battles per worker job: big for the fast AI (less overhead), small for slow AIs so every core stays busy
+		jobBattles = jobBattles || (policy.startsWith('rollout') ? 12 : 240);
+		Object.assign(this, {pool, mine, theirSpecies, policy, resultsPath, jobBattles});
 		this.OPTS = options(mine.length);
 		this.M = this.OPTS.length;
 		this.base = hash(`${mine.map(s => s.species).join(',')}|${theirSpecies.join(',')}|${salt}|${policy}`);
@@ -87,7 +89,7 @@ class DraftMatrix {
 	}
 
 	/** Give each cell of rows x cols `n` more samples. */
-	async sample(rows, cols, n, onProgress) {
+	async sample(rows, cols, n, onProgress, priority = 0) {
 		const jobs = [], meta = [];
 		for (const r of rows) {
 			// columns at the same sample index share a job
@@ -98,25 +100,30 @@ class DraftMatrix {
 				groups.get(k).push(c);
 			}
 			for (const [k, cs] of groups) {
-				// split big jobs so all cores stay busy
-				const per = Math.max(1, Math.floor(240 / n));
-				for (let x = 0; x < cs.length; x += per) {
-					const part = cs.slice(x, x + per);
-					jobs.push({type: 'draft', mine: this.mine, theirSpecies: this.theirSpecies, row: r, cols: part,
-						samples: Array.from({length: n}, (_, i) => k + i), base: this.base, policy: this.policy, resultsPath: this.resultsPath});
-					meta.push({r, cs: part});
+				// split big jobs so all cores stay busy: by samples first, then by columns. Sample chunks go in
+				// increasing order, so each cell's results are appended in sample order.
+				const sc = Math.max(1, Math.min(n, this.jobBattles));
+				const per = Math.max(1, Math.floor(this.jobBattles / sc));
+				for (let s0 = 0; s0 < n; s0 += sc) {
+					const samples = Array.from({length: Math.min(sc, n - s0)}, (_, i) => k + s0 + i);
+					for (let x = 0; x < cs.length; x += per) {
+						const part = cs.slice(x, x + per);
+						jobs.push({type: 'draft', mine: this.mine, theirSpecies: this.theirSpecies, row: r, cols: part,
+							samples, base: this.base, policy: this.policy, resultsPath: this.resultsPath});
+						meta.push({r, cs: part, n: samples.length});
+					}
 				}
 			}
 		}
 		const res = await this.pool.run(jobs, 1, x => {
-			this.battles += meta[x].cs.length * n;
+			this.battles += meta[x].cs.length * meta[x].n;
 			if (onProgress) onProgress(this.battles);
-		});
+		}, priority);
 		res.forEach((out, x) => {
-			const {r, cs} = meta[x];
+			const {r, cs, n: m} = meta[x];
 			// a failed job leaves NaN holes, keeping sample indices aligned; they are skipped, not scored
-			if (isFailed(out)) this.failed += cs.length * n;
-			cs.forEach((c, i) => this.outs[r][c].push(...(isFailed(out) ? new Array(n).fill(NaN) : out.outs[i])));
+			if (isFailed(out)) this.failed += cs.length * m;
+			cs.forEach((c, i) => this.outs[r][c].push(...(isFailed(out) ? new Array(m).fill(NaN) : out.outs[i])));
 		});
 	}
 
@@ -131,12 +138,23 @@ class DraftMatrix {
 	 * Solve and describe every option. lossSe pairs each option with the best one sample by sample (same
 	 * opponent sets and dice), which is much tighter than comparing two independent estimates.
 	 */
-	report() {
+	report({rows, cols, extraRows = []} = {}) {
 		const {OPTS, M, mine, theirSpecies} = this;
-		const A = this.matrix();
-		const eq = solve(A);
-		const all = [...Array(M).keys()];
-		const best = eq.rowVals.indexOf(Math.max(...eq.rowVals));
+		const full = this.matrix();
+		const all0 = [...Array(M).keys()];
+		rows = rows || all0;
+		cols = cols || all0;
+		// Solve the game restricted to rows x cols, then map it back to full-size vectors (zeros outside).
+		// extraRows are valued against the opponent's equilibrium mix but take no part in the solve.
+		const sub = solve(rows.map(r => cols.map(c => full[r][c])));
+		const eq = {value: sub.value, gap: sub.gap, x: new Array(M).fill(0), y: new Array(M).fill(0),
+			rowVals: new Array(M).fill(NaN), colVals: new Array(M).fill(NaN)};
+		rows.forEach((r, i) => { eq.x[r] = sub.x[i]; });
+		cols.forEach((c, j) => { eq.y[c] = sub.y[j]; eq.colVals[c] = sub.colVals[j]; });
+		for (const r of [...rows, ...extraRows]) eq.rowVals[r] = cols.reduce((t, c) => t + full[r][c] * eq.y[c], 0);
+		const A = full;
+		const all = [...rows, ...extraRows.filter(r => !rows.includes(r))];
+		const best = rows.reduce((b, r) => eq.rowVals[r] > eq.rowVals[b] ? r : b, rows[0]);
 		const varOf = all => {
 			const xs = all.filter(Number.isFinite);
 			if (xs.length < 2) return 0.25;
@@ -144,8 +162,8 @@ class DraftMatrix {
 			return xs.reduce((a, b) => a + (b - mu) ** 2, 0) / (xs.length - 1);
 		};
 		const valid = o => o.filter(Number.isFinite).length;
-		const se = i => Math.sqrt(all.reduce((s, j) => s + (eq.y[j] ? eq.y[j] ** 2 * varOf(this.outs[i][j]) / Math.max(1, valid(this.outs[i][j])) : 0), 0));
-		const lossSe = i => i === best ? 0 : Math.sqrt(all.reduce((s, j) => {
+		const se = i => Math.sqrt(cols.reduce((s, j) => s + (eq.y[j] ? eq.y[j] ** 2 * varOf(this.outs[i][j]) / Math.max(1, valid(this.outs[i][j])) : 0), 0));
+		const lossSe = i => i === best ? 0 : Math.sqrt(cols.reduce((s, j) => {
 			if (!eq.y[j]) return s;
 			const a = this.outs[best][j], b = this.outs[i][j], n = Math.min(a.length, b.length);
 			const d = Array.from({length: n}, (_, k) => a[k] - b[k]).filter(Number.isFinite);
@@ -158,7 +176,7 @@ class DraftMatrix {
 				index: i, option: OPTS[i], lead: mine[OPTS[i][0]].species, back: [mine[OPTS[i][1]].species, mine[OPTS[i][2]].species],
 				value: eq.rowVals[i], se: se(i), loss: eq.rowVals[best] - eq.rowVals[i], lossSe: lossSe(i), mix: eq.x[i],
 			})).sort((a, b) => b.value - a.value),
-			theirMix: all.filter(j => eq.y[j] > 0.01).map(j => ({
+			theirMix: cols.filter(j => eq.y[j] > 0.01).map(j => ({
 				index: j, option: OPTS[j], lead: theirSpecies[OPTS[j][0]], back: names(theirSpecies, OPTS[j]).slice(1), p: eq.y[j],
 			})).sort((a, b) => b.p - a.p),
 			eq,
@@ -187,4 +205,113 @@ async function solveDraft(pool, mine, theirSpecies, opts = {}) {
 	return {...dm.report(), matrix: dm};
 }
 
-module.exports = {options, previewChoice, runJob, DraftMatrix, solveDraft};
+/**
+ * Strong-AI analysis at a fraction of the cost. A strong pilot (rollout4all) is ~60x slower than the heuristic,
+ * and filling all 3,600 cells with it costs ~40k slow battles. But the heuristic, though biased, is a good
+ * filter for my own options: in the convergence benchmark the strong AI's best pick was always tied with one
+ * of the heuristic's top 10. It is not a good filter for the opponent's replies, so those are probed by the strong AI.
+ *
+ *   1. screen   the heuristic plays every cell (cheap), then refines the contested corner
+ *   2. corner   the strong AI plays my `rows` best options (by the heuristic) against their `cols` most
+ *               dangerous replies, `strong` samples per cell
+ *   3. expand   double oracle: solve the strong corner; the strong AI probes every other reply against my
+ *               equilibrium mix (`probe` samples), and the most dangerous join the corner, up to `rounds` times
+ *   4. grade    my corner options against the opponent's equilibrium replies, topped up to `grade` samples
+ *
+ * Returns the strong report for the corner rows (other options are not valued; gradeOption adds one).
+ */
+class StrongDraft {
+	constructor(pool, mine, theirSpecies, opts = {}) {
+		this.opts = {screen: 2, refine: 8, rows: 10, cols: 8, strong: 16, grade: 48, probe: 4, addCols: 4, rounds: 2,
+			margin: 0.04, policy: 'rollout4all', ...opts};
+		const {resultsPath = DEFAULT_RESULTS, salt = 0} = this.opts;
+		this.h = new DraftMatrix(pool, mine, theirSpecies, {policy: 'heuristic2', resultsPath, salt});
+		this.s = new DraftMatrix(pool, mine, theirSpecies, {policy: this.opts.policy, resultsPath, salt});
+		this.extraRows = [];
+		this.progress = 0; // battles, weighted: one strong battle counts as STRONG_COST heuristic ones
+	}
+
+	get battles() { return this.h.battles + this.s.battles; }
+	get failed() { return this.h.failed + this.s.failed; }
+
+	async run(onProgress) {
+		const {screen, refine, rows, cols, strong, grade, probe, addCols, rounds, margin} = this.opts;
+		const {h, s} = this;
+		const all = [...Array(h.M).keys()];
+		const top = (vals, k, keep = []) => [...new Set([...keep, ...all.slice().sort((a, b) => vals(b) - vals(a)).slice(0, k)])];
+		const report = () => onProgress && onProgress(h.battles + STRONG_COST * s.battles);
+
+		// 1. heuristic screen and refine
+		await h.sample(all, all, screen, report);
+		let eqH = solve(h.matrix());
+		await h.sample(top(i => eqH.rowVals[i], 16, all.filter(i => eqH.x[i] > 0.01)),
+			top(j => -eqH.colVals[j], 16, all.filter(j => eqH.y[j] > 0.01)), refine, report);
+		const H = h.matrix();
+		eqH = solve(H);
+
+		// 2. strong corner
+		const R = top(i => eqH.rowVals[i], rows, all.filter(i => eqH.x[i] > 0.01));
+		const C = top(j => -eqH.colVals[j], cols, all.filter(j => eqH.y[j] > 0.01));
+		await s.sample(R, C, strong, report);
+
+		// 3. double oracle on columns. The heuristic is a poor guide to the opponent's best replies (the strong
+		// AI's equilibrium replies were often far down the heuristic's list), so the strong AI screens every
+		// reply against my current mix with a few battles, and the most dangerous join the corner.
+		for (let round = 0; round < rounds; round++) {
+			const sr = s.report({rows: R, cols: C});
+			const supp = R.filter(r => sr.eq.x[r] > 0.01);
+			const rest = all.filter(j => !C.includes(j));
+			await s.sample(supp, rest.filter(j => s.outs[supp[0]][j].length < probe), probe, report);
+			const S = s.matrix();
+			const w = supp.reduce((t, r) => t + sr.eq.x[r], 0);
+			const vsMix = j => supp.reduce((t, r) => t + sr.eq.x[r] * S[r][j], 0) / w;
+			const fresh = rest.filter(j => vsMix(j) < sr.value + margin).sort((a, b) => vsMix(a) - vsMix(b)).slice(0, addCols);
+			if (!fresh.length) break;
+			await s.sample(R, fresh, strong, report);
+			C.push(...fresh);
+		}
+
+		// 4. grade against the equilibrium replies
+		const support = s.report({rows: R, cols: C}).theirMix.map(t => t.index);
+		await s.sample(R, support, Math.max(0, grade - strong), report);
+		this.R = R;
+		this.C = C;
+		return this.report();
+	}
+
+	/** Value one more of my options (for instance the player's own pick) against the equilibrium replies. */
+	async gradeOption(index, onProgress) {
+		if (this.R.includes(index) || this.extraRows.includes(index)) return this.report();
+		const support = this.report().theirMix.map(t => t.index);
+		// priority: the player is waiting on this, possibly while the next matchup is being analysed
+		await this.s.sample([index], support, this.opts.grade, onProgress && (() => onProgress(this.h.battles + STRONG_COST * this.s.battles)), 1);
+		this.extraRows.push(index);
+		return this.report();
+	}
+
+	report() {
+		const r = this.s.report({rows: this.R, cols: this.C, extraRows: this.extraRows});
+		return {...r, battles: this.battles, failed: this.failed, strongBattles: this.s.battles, corner: [this.R.length, this.C.length]};
+	}
+}
+
+// rough cost of one rollout4all battle in heuristic2 battles, for progress bars
+const STRONG_COST = 150; // measured 2026-11-15 (draft cells, this Mac): heuristic2 ~5 ms, rollout4all ~0.73 s of wall time per battle
+
+/** Expected weighted battle count of a StrongDraft run (for progress bars). */
+function strongDraftCost(opts = {}) {
+	const o = {screen: 2, refine: 8, rows: 10, cols: 8, strong: 16, grade: 48, probe: 4, addCols: 4, rounds: 2, ...opts};
+	const heur = 3600 * o.screen + 256 * o.refine;
+	// corner, then each round: ~3 support rows probe ~50 replies, and the new replies join the corner
+	const strong = o.rows * o.cols * o.strong + o.rounds * (3 * 50 * o.probe + o.rows * o.addCols * o.strong) +
+		o.rows * 4 * Math.max(0, o.grade - o.strong);
+	return heur + STRONG_COST * strong;
+}
+
+async function solveDraftStrong(pool, mine, theirSpecies, opts = {}) {
+	const sd = new StrongDraft(pool, mine, theirSpecies, opts);
+	const r = await sd.run(opts.onProgress);
+	return {...r, matrix: sd.s, solver: sd};
+}
+
+module.exports = {options, previewChoice, runJob, DraftMatrix, solveDraft, StrongDraft, solveDraftStrong, strongDraftCost, STRONG_COST};

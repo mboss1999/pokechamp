@@ -1,11 +1,17 @@
 'use strict';
-// Team builder server: static files plus a local API that runs team refinement
-// simulations on this machine's CPU cores. node web/serve.cjs [port]
+// Team builder server: static files plus a local API for simulations. node web/serve.cjs [port]
+// Team tuning is a background service (sim/tuner.js): precomputed for the player's collection, cached on disk,
+// run on a cloud machine when AWS is set up and on this computer otherwise.
 //
-//   POST /api/refine        {members: [{entryId, set}], budget: 'quick'|'normal'|'thorough'} -> {jobId}
-//   GET  /api/refine/<id>   -> {status: 'running'|'done'|'error', progress, message, result?, error?}
+//   POST /api/collection    {owned: [species], includeMegas} -> {keys}: precompute tunings for the teams the
+//                           Team Builder will show for this collection
+//   POST /api/tune          {teams: [[{entryId, set}]]} -> {keys, jobs}: the tunings of these teams (queued if new)
+//   GET  /api/tune?keys=a,b -> {jobs: [{key, status: 'queued'|'running'|'done'|'error', progress, message, where,
+//                           result?, seconds?, cached?, error?}]}
 //   POST /api/draft         {mine: [{entryId, set}] | minePaste: showdown text, theirs: [species], budget} -> {jobId}
-//   GET  /api/draft/<id>    -> same shape as refine; result is the team preview analysis (sim/draft.js)
+//   GET  /api/draft/<id>    -> {status, progress, message, result?, error?}; result is the team preview analysis (sim/draft.js)
+//   POST /api/draft/<id>/grade {option} -> strong analyses value only their contested corner; this values one more
+//                           option (the player's pick) against the opponent's equilibrium replies. Poll GET as before.
 
 const http = require('http');
 const fs = require('fs');
@@ -14,15 +20,15 @@ const path = require('path');
 const ROOT = __dirname;
 const PORT = Number(process.argv[2] || process.env.PORT || 5173);
 const RESULTS = path.join(ROOT, 'data', 'results.json');
+const TUNED = path.join(ROOT, 'data', 'tuned.json');
 const TYPES = {
 	'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
 	'.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
 };
 
 // Simulation machinery is loaded on first use so serving the page stays instant.
-let pool = null;
+let pool = null, tuner = null;
 const jobs = new Map();
-let running = null;
 
 function sendJson(res, code, body) {
 	res.writeHead(code, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
@@ -51,11 +57,65 @@ function getPool() {
 	return pool;
 }
 
-// Team preview analysis budgets (samples per cell at each adaptive stage; see sim/draft.js).
+function getTuner() {
+	if (!tuner) {
+		const {Tuner} = require('../sim/tuner');
+		tuner = new Tuner({resultsPath: RESULTS, cachePath: TUNED, getPool});
+	}
+	return tuner;
+}
+
+async function readJson(req, res) {
+	try {
+		return JSON.parse(await readBody(req));
+	} catch (e) {
+		sendJson(res, 400, {error: 'Invalid request body'});
+		return null;
+	}
+}
+
+async function postCollection(req, res) {
+	const body = await readJson(req, res);
+	if (!body) return;
+	const owned = Array.isArray(body.owned) ? body.owned.filter(s => typeof s === 'string').slice(0, 1000) : [];
+	const keys = await getTuner().setCollection(owned, body.includeMegas !== false);
+	sendJson(res, 200, {keys});
+}
+
+async function postTune(req, res) {
+	const body = await readJson(req, res);
+	if (!body) return;
+	const t = getTuner();
+	let keys;
+	try {
+		keys = t.request((Array.isArray(body.teams) ? body.teams : []).slice(0, 20), 2, true);
+	} catch (e) {
+		sendJson(res, 400, {error: e.message});
+		return;
+	}
+	sendJson(res, 200, {keys, jobs: t.status(keys)});
+}
+
+// Team preview analysis budgets (samples per cell at each adaptive stage; see sim/draft.js). quick and normal
+// pilot every battle with the fast heuristic; strong has the rollout AI play the contested corner (StrongDraft).
 const DRAFT_BUDGETS = {
 	quick: {screen: 2, refine: 8, grade: 24},
 	normal: {screen: 4, refine: 16, grade: 48},
+	strong: {hybrid: true, policy: 'rollout4all', screen: 2, refine: 8, rows: 10, cols: 8, strong: 16, grade: 48},
 };
+// For development: DRAFT_STRONG_OPTS='{"strong":4,"grade":8}' shrinks the strong analysis to test the app quickly.
+if (process.env.DRAFT_STRONG_OPTS) Object.assign(DRAFT_BUDGETS.strong, JSON.parse(process.env.DRAFT_STRONG_OPTS));
+
+/** The client-facing form of a draft analysis. */
+function draftResult(r, budget, mine, theirs) {
+	const A = r.matrix.matrix();
+	return {
+		value: r.value, battles: r.battles, strongBattles: r.strongBattles || 0, budget, strong: !!r.strongBattles,
+		mine: mine.map(s => s.species), theirs,
+		options: r.options.map(o => ({...o, vsTheirs: r.theirMix.map(t => A[o.index][t.index])})),
+		theirMix: r.theirMix,
+	};
+}
 
 async function startDraft(req, res) {
 	let body;
@@ -76,24 +136,21 @@ async function startDraft(req, res) {
 	}
 	const budget = DRAFT_BUDGETS[body.budget] ? body.budget : 'normal';
 	const b = DRAFT_BUDGETS[budget];
+	const {solveDraft, solveDraftStrong, strongDraftCost} = require('../sim/draft');
 	// rough battle count for the progress bar: every cell screened, a 16x16 corner refined, ~8 columns graded
-	const expected = 3600 * b.screen + 256 * b.refine + 60 * 8 * b.grade;
+	const expected = b.hybrid ? strongDraftCost(b) : 3600 * b.screen + 256 * b.refine + 60 * 8 * b.grade;
 	const jobId = Math.random().toString(36).slice(2, 10);
 	const job = {status: 'running', progress: 0, message: 'Simulating team preview…', startedAt: Date.now()};
 	jobs.set(jobId, job);
 	sendJson(res, 202, {jobId});
 	try {
-		const {solveDraft} = require('../sim/draft');
-		const r = await solveDraft(getPool(), mine, theirs, {
+		const r = await (b.hybrid ? solveDraftStrong : solveDraft)(getPool(), mine, theirs, {
 			...b, resultsPath: RESULTS,
 			onProgress: battles => { job.progress = Math.min(0.99, battles / expected); },
 		});
-		const A = r.matrix.matrix();
-		job.result = {
-			value: r.value, battles: r.battles, budget, mine: mine.map(s => s.species), theirs,
-			options: r.options.map(o => ({...o, vsTheirs: r.theirMix.map(t => A[o.index][t.index])})),
-			theirMix: r.theirMix,
-		};
+		job.result = draftResult(r, budget, mine, theirs);
+		// kept server-side (not sent) so the player's own pick can be graded later
+		Object.defineProperty(job, 'solver', {value: r.solver ? {sd: r.solver, budget, mine, theirs} : null, enumerable: false});
 		job.status = 'done';
 		job.progress = 1;
 		job.seconds = Math.round((Date.now() - job.startedAt) / 1000);
@@ -137,11 +194,9 @@ function parseTheirs(results, list) {
 	return out;
 }
 
-async function startRefine(req, res) {
-	if (running && jobs.get(running)?.status === 'running') {
-		sendJson(res, 409, {error: 'A refinement is already running. Wait for it to finish.', jobId: running});
-		return;
-	}
+/** Value one more option of a finished strong analysis (the player's pick, when outside the analysed corner). */
+async function gradeDraft(req, res, jobId) {
+	const job = jobs.get(jobId);
 	let body;
 	try {
 		body = JSON.parse(await readBody(req));
@@ -149,32 +204,34 @@ async function startRefine(req, res) {
 		sendJson(res, 400, {error: 'Invalid request body'});
 		return;
 	}
-	const members = Array.isArray(body.members) ? body.members.slice(0, 6) : [];
-	if (members.length < 3 || members.some(m => typeof m.entryId !== 'string')) {
-		sendJson(res, 400, {error: 'Send 3 to 6 team members'});
+	const option = Number(body.option);
+	if (!job || job.status !== 'done' || !job.solver) {
+		sendJson(res, 409, {error: 'Only a finished strong analysis can grade an extra option'});
 		return;
 	}
-	const budget = ['quick', 'normal', 'thorough'].includes(body.budget) ? body.budget : 'normal';
-	const jobId = Math.random().toString(36).slice(2, 10);
-	const job = {status: 'running', progress: 0, message: 'Starting simulator…', startedAt: Date.now()};
-	jobs.set(jobId, job);
-	running = jobId;
+	if (!Number.isInteger(option) || option < 0 || option >= job.solver.sd.s.M) {
+		sendJson(res, 400, {error: 'Unknown option'});
+		return;
+	}
+	if (job.result.options.some(o => o.index === option)) {
+		sendJson(res, 200, {jobId});
+		return;
+	}
+	const {sd, budget, mine, theirs} = job.solver;
+	const start = sd.s.battles, expected = sd.opts.grade * Math.max(1, job.result.theirMix.length);
+	job.status = 'running';
+	job.progress = 0;
+	job.message = 'Grading your pick with the strong AI…';
 	sendJson(res, 202, {jobId});
-
 	try {
-		const results = JSON.parse(fs.readFileSync(RESULTS, 'utf8'));
-		const {refineTeam} = require('../sim/refine');
-		job.result = await refineTeam(getPool(), results, members, {
-			budget,
-			onProgress: (p, msg) => { job.progress = p; if (msg) job.message = msg; },
-		});
+		const r = await sd.gradeOption(option, () => { job.progress = Math.min(0.99, (sd.s.battles - start) / expected); });
+		job.result = draftResult({...r, matrix: sd.s}, budget, mine, theirs);
 		job.status = 'done';
 		job.progress = 1;
-		job.seconds = Math.round((Date.now() - job.startedAt) / 1000);
 	} catch (e) {
 		job.status = 'error';
 		job.error = e.message;
-		console.error('refine failed:', e);
+		console.error('grading failed:', e);
 	}
 }
 
@@ -197,15 +254,29 @@ function serveStatic(req, res) {
 
 http.createServer((req, res) => {
 	const url = new URL(req.url, 'http://x').pathname;
-	if (url === '/api/refine' && req.method === 'POST') {
-		startRefine(req, res).catch(e => sendJson(res, 500, {error: e.message}));
+	if (url === '/api/collection' && req.method === 'POST') {
+		postCollection(req, res).catch(e => sendJson(res, 500, {error: e.message}));
+		return;
+	}
+	if (url === '/api/tune' && req.method === 'POST') {
+		postTune(req, res).catch(e => sendJson(res, 500, {error: e.message}));
+		return;
+	}
+	if (url === '/api/tune' && req.method === 'GET') {
+		const keys = (new URL(req.url, 'http://x').searchParams.get('keys') || '').split(',').filter(Boolean).slice(0, 40);
+		sendJson(res, 200, {jobs: getTuner().status(keys)});
 		return;
 	}
 	if (url === '/api/draft' && req.method === 'POST') {
 		startDraft(req, res).catch(e => sendJson(res, 500, {error: e.message}));
 		return;
 	}
-	const m = url.match(/^\/api\/(?:refine|draft)\/([a-z0-9]+)$/);
+	const g = url.match(/^\/api\/draft\/([a-z0-9]+)\/grade$/);
+	if (g && req.method === 'POST') {
+		gradeDraft(req, res, g[1]).catch(e => sendJson(res, 500, {error: e.message}));
+		return;
+	}
+	const m = url.match(/^\/api\/draft\/([a-z0-9]+)$/);
 	if (m && req.method === 'GET') {
 		const job = jobs.get(m[1]);
 		if (!job) sendJson(res, 404, {error: 'Unknown job'});
@@ -217,4 +288,7 @@ http.createServer((req, res) => {
 		return;
 	}
 	serveStatic(req, res);
-}).listen(PORT, '127.0.0.1', () => console.log(`Team builder running at http://localhost:${PORT}`));
+}).listen(PORT, '127.0.0.1', () => {
+	console.log(`Team builder running at http://localhost:${PORT}`);
+	getTuner(); // check for AWS and load cached tunings now, not on the first request
+});

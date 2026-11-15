@@ -16,10 +16,13 @@ const arg = (name, def) => {
 	return i >= 0 ? argv[i + 1] : def;
 };
 const PAIRS = Number(arg('pairs', 300));
+// --teams meta (default): teams from the simulated meta. --teams curated: Showdown's hand-built Champions random
+// battle sets (many status and tactical moves), set to level 50, which tests how well a pilot uses those moves.
+const TEAMS = arg('teams', 'meta');
 const A = arg('a', 'lookahead'), B = arg('b', 'heuristic');
 const results = require(path.resolve(arg('results', path.join(__dirname, '..', 'web', 'data', 'results.json'))));
 
-function metaTeam(rng) {
+function metaTeamOf(rng) {
 	const {entries} = results;
 	const w = entries.map(e => Math.exp((e.rating - 1500) / 120));
 	const total = w.reduce((x, y) => x + y, 0);
@@ -37,20 +40,32 @@ function metaTeam(rng) {
 	return team;
 }
 
+function curatedTeam(rng) {
+	const {Teams} = require('pokemon-showdown');
+	const gen = Teams.getGenerator('gen9championsrandombattle', seedFrom(rng));
+	return gen.getTeam().map(s => ({...s, level: 50}));
+}
+
 (async () => {
 	const rng = mulberry32(20261022);
+	const metaTeam = TEAMS === 'curated' ? curatedTeam : metaTeamOf;
 	const jobs = [];
 	for (let p = 0; p < PAIRS; p++) {
 		const t1 = metaTeam(rng), t2 = metaTeam(rng), seed = seedFrom(rng);
 		jobs.push({a: t1, b: t2, seed, agents: [A, B]}); // agent A pilots t1
 		jobs.push({a: t1, b: t2, seed, agents: [B, A]}); // agent A pilots t2
 	}
-	const pool = new Pool();
+	// --pool lambda plays the battles on AWS Lambda (aws/lambda-deploy.sh); slow pilots need small chunks
+	let pool;
+	if (arg('pool', 'local') === 'lambda') {
+		const {LambdaPool} = require('./lambdapool');
+		pool = new LambdaPool({concurrency: Number(arg('concurrency', 600))});
+	} else pool = new Pool();
 	const t0 = Date.now();
 	const res = await pool.run(jobs, 2);
 	pool.close();
 	if (pool.failed || pool.workerFailures) {
-		console.log(`WARNING: ${pool.failed} battles failed (${pool.errors} crashed, ${pool.workerFailures} worker failures); their pairs are left out:`, pool.errorSamples);
+		console.log(`WARNING: ${pool.failed} battles failed (${pool.errors ?? '?'} crashed, ${pool.workerFailures ?? 0} worker failures); their pairs are left out:`, pool.errorSamples);
 	}
 	let score = 0, games = 0, errors = 0, failedPairs = 0, bothSame = 0;
 	const pairScores = [];

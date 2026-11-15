@@ -22,7 +22,7 @@ const {toPokemonSet} = require('./refine');
 const {mulberry32, seedFrom, clean, hash} = require('./util');
 const {playOut} = require('./battle');
 const {legalChoices, analyzeTurn, DEFAULT_RESULTS} = require('./engine');
-const {solveDraft} = require('./draft');
+const {solveDraft, solveDraftStrong} = require('./draft');
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -46,6 +46,10 @@ const DRAFT_LEVELS = {
 	'h-s16': {policy: 'heuristic', screen: 64, refine: 256, grade: 768},
 	'r4-s1': {policy: 'rollout4', screen: 4, refine: 16, grade: 48},
 	'r4-s4': {policy: 'rollout4', screen: 16, refine: 64, grade: 192},
+	// hybrid (sim/draft.js StrongDraft): heuristic screen, rollout4 on the contested corner
+	'x4-s1': {hybrid: true, policy: 'rollout4', screen: 2, refine: 8, rows: 10, cols: 8, strong: 16, grade: 48},
+	'x4-s4': {hybrid: true, policy: 'rollout4', screen: 4, refine: 16, rows: 12, cols: 10, strong: 64, grade: 192, probe: 16},
+	'x2-s1': {hybrid: true, policy: 'rollout2', screen: 2, refine: 8, rows: 10, cols: 8, strong: 16, grade: 48},
 };
 const TURN_LEVELS = {
 	'h-4x4': {policy: 'heuristic', D: 4, K: 4},
@@ -143,10 +147,11 @@ async function runDrafts(pool, levelName, salt = SALT, limit = LIMIT) {
 	const t0 = Date.now();
 	let battles = 0;
 	// a few scenarios at a time keeps every core busy through each solver's sequential stages
-	await mapLimit(drafts.map((d, i) => i).filter(i => !done[i]), 3, async i => {
+	// hybrid solves have short sequential stages, so more of them run at once
+	await mapLimit(drafts.map((d, i) => i).filter(i => !done[i]), level.hybrid ? 8 : 3, async i => {
 		const d = drafts[i];
-		const r = await solveDraft(pool, d.mine, d.theirSpecies, {...level, resultsPath: RESULTS, salt: levelSalt(levelName, salt)});
-		done[i] = {value: r.value, battles: r.battles, failed: r.failed, options: r.options.map(o => ({index: o.index, value: o.value, se: o.se, mix: o.mix})),
+		const r = await (level.hybrid ? solveDraftStrong : solveDraft)(pool, d.mine, d.theirSpecies, {...level, resultsPath: RESULTS, salt: levelSalt(levelName, salt)});
+		done[i] = {value: r.value, battles: r.battles, strongBattles: r.strongBattles, failed: r.failed, options: r.options.map(o => ({index: o.index, value: o.value, se: o.se, mix: o.mix})),
 			theirMix: r.theirMix.map(t => ({index: t.index, p: t.p}))};
 		battles += r.battles;
 		write(file, done);

@@ -16,6 +16,20 @@ function loadOwned() {
 function saveOwned() {
 	try { localStorage.setItem(STORE_KEY, JSON.stringify([...owned])); } catch {}
 	$('#owned-count').textContent = owned.size;
+	syncCollection();
+}
+
+// The server precomputes tunings for the teams this collection builds, so they are ready before you look.
+let syncTimer = null;
+function syncCollection() {
+	clearTimeout(syncTimer);
+	syncTimer = setTimeout(() => {
+		fetch('api/collection', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({owned: [...owned], includeMegas: $('#include-megas').checked}),
+		}).catch(() => {});
+	}, 800);
 }
 
 /** Group roster entries (base + Mega variants) by species and assign tiers. */
@@ -100,9 +114,8 @@ function detailRow(s) {
 	return `<tr class="detail"><td colspan="8"><div class="detail-grid">${cards}</div></td></tr>`;
 }
 
-// Teams currently on screen, each with its member sets and any refinement run against it.
+// Teams currently on screen, each with its member sets and its tuning (precomputed by the server).
 let shownTeams = [];
-let refineBusy = false;
 
 function renderTeams(teams) {
 	const box = $('#team-results');
@@ -121,7 +134,61 @@ function renderTeams(teams) {
 	shownTeams = teams.map(t => ({team: t, members: assignSets(results, t.members), refine: null}));
 	box.innerHTML = shownTeams.map((_, n) => `<section class="team" id="team-${n}">${teamHtml(n)}</section>`).join('');
 	trainer?.refresh();
+	fetchTunings();
 }
+
+// ---- tunings: fetched from the server, which has usually finished them already ----
+let tuneGen = 0;
+
+async function fetchTunings() {
+	const gen = ++tuneGen;
+	const teams = shownTeams;
+	const askable = teams.filter(st => st.members.length >= 3);
+	if (!askable.length) return;
+	let keys;
+	try {
+		const resp = await fetch('api/tune', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({teams: askable.map(st => st.members.map(m => ({entryId: m.entry.id, set: m.set})))}),
+		});
+		const body = await resp.json().catch(() => ({}));
+		if (!resp.ok) throw new Error(body.error || `Simulator unavailable (HTTP ${resp.status}). Start the app with ./start.sh.`);
+		keys = body.keys;
+		applyTunings(askable, body.jobs);
+	} catch (e) {
+		for (const st of askable) st.refine = {status: 'error', error: e.message};
+		redrawAllTeams();
+		return;
+	}
+	// follow the ones still in progress until they land
+	while (gen === tuneGen && askable.some(st => st.refine && !['done', 'error'].includes(st.refine.status))) {
+		await new Promise(r => setTimeout(r, 1500));
+		if (gen !== tuneGen) return;
+		try {
+			const body = await (await fetch(`api/tune?keys=${keys.join(',')}`)).json();
+			applyTunings(askable, body.jobs);
+		} catch {}
+	}
+}
+
+function applyTunings(teams, jobs) {
+	teams.forEach((st, i) => {
+		const job = jobs[i], prev = st.refine;
+		st.refine = job;
+		const n = shownTeams.indexOf(st);
+		if (n < 0) return;
+		// progress only: update just the panel so the page doesn't flicker; a finished tuning changes the sets
+		if (prev && prev.status === job.status && job.status !== 'done') {
+			const panel = document.querySelector(`#team-${n} .refine`);
+			if (panel) panel.outerHTML = refinePanel(n);
+		} else if (!prev || prev.status !== job.status) {
+			redrawTeam(n);
+			if (job.status === 'done') trainer?.refresh();
+		}
+	});
+}
+
 
 /** The sets to show for a team: tuned ones once a refinement has finished (and kept its changes). */
 function teamMembers(n) {
@@ -175,28 +242,18 @@ const pts = x => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)}`;
 
 function refinePanel(n) {
 	const r = shownTeams[n].refine;
-	if (!r) {
-		return `<div class="refine card">
-			<div class="refine-text"><b>Tune this team with simulations.</b> Re-tests each member's moves, item, ability and
-			stat points <i>with these exact teammates</i> against strong meta teams, then plays full 6v6 battles to check the
-			result. Runs on your Mac.</div>
-			<div class="refine-controls">
-				<select data-budget="${n}">
-					<option value="quick">Quick · ~1 min</option>
-					<option value="normal" selected>Normal · ~1–3 min</option>
-					<option value="thorough">Thorough · ~5 min</option>
-				</select>
-				<button class="primary" data-refine="${n}" ${refineBusy ? 'disabled' : ''}>Tune &amp; validate</button>
-			</div>
-		</div>`;
+	if (!r || r.status === 'unknown') {
+		return `<div class="refine card"><div class="refine-text"><b>Tuning…</b> Connecting to the simulator.</div></div>`;
 	}
-	if (r.status === 'running') {
-		return `<div class="refine card"><div class="refine-text"><b>Simulating…</b> ${esc(r.message || '')}</div>
+	if (r.status === 'queued' || r.status === 'running') {
+		const where = {lambda: 'on AWS Lambda', cloud: 'on a 64-core cloud machine'}[r.where] || 'on this computer';
+		return `<div class="refine card"><div class="refine-text"><b>Tuning this team ${where}.</b> ${esc(r.message || '')}
+			<span class="hint">The tuned sets appear here by themselves; nothing to wait for.</span></div>
 			<div class="bar"><div style="width:${Math.round((r.progress || 0) * 100)}%"></div></div></div>`;
 	}
 	if (r.status === 'error') {
-		return `<div class="refine card"><div class="refine-text bad">${esc(r.error)}</div>
-			<button class="ghost" data-refine-reset="${n}">Try again</button></div>`;
+		return `<div class="refine card"><div class="refine-text bad">Tuning failed: ${esc(r.error || 'unknown error')}</div>
+			<button class="ghost" data-refine-retry="${n}">Try again</button></div>`;
 	}
 	const res = r.result;
 	const changed = res.members.filter(m => m.changes.length).length;
@@ -214,11 +271,12 @@ function refinePanel(n) {
 		const e = results.entries[scorer.index.get(t.entryId)];
 		return `<li>${sprite(e)}${esc(displayName(e))}<span class="pct ${pctClass(t.winRate)}">${pct(t.winRate)}</span></li>`;
 	}).join('');
+	const how = r.cached ? 'precomputed' :
+		`simulated in ${r.seconds ?? '?'}s ${{lambda: 'on AWS Lambda', cloud: 'on a cloud machine'}[r.where] || 'on this computer'}`;
 	return `<div class="refine card done">
 		<div class="refine-text">${headline}<br>
-			<span class="hint">Your team won ${pct(res.after.winRate)} of ${res.after.games.toLocaleString()} full 6v6 battles against strong meta teams
-			(${res.battles.toLocaleString()} battles simulated in ${r.seconds || '?'}s).</span></div>
-		<button class="ghost" data-refine-reset="${n}">Run again</button>
+			<span class="hint">Tuned and validated: your team won ${pct(res.after.winRate)} of ${res.after.games.toLocaleString()} full 6v6 battles against strong meta teams${res.strongBattles ? ', played by the strong (rollout) AI' : ''}
+			(${(res.battles + (res.strongBattles || 0)).toLocaleString()} battles, ${how}).</span></div>
 		${threats ? `<details><summary>Toughest opponents (your win rate when they were brought)</summary><ul class="mlist">${threats}</ul></details>` : ''}
 	</div>`;
 }
@@ -231,42 +289,13 @@ function redrawAllTeams() {
 	shownTeams.forEach((_, n) => redrawTeam(n));
 }
 
-async function refine(n, budget) {
-	const st = shownTeams[n];
-	refineBusy = true;
-	st.refine = {status: 'running', progress: 0, message: 'Starting simulator…'};
-	redrawAllTeams();
-	try {
-		const resp = await fetch('api/refine', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({budget, members: st.members.map(m => ({entryId: m.entry.id, set: m.set}))}),
-		});
-		const body = await resp.json().catch(() => ({}));
-		if (!resp.ok) throw new Error(body.error || `Simulator unavailable (HTTP ${resp.status}). Start the app with ./start.sh.`);
-		for (;;) {
-			await new Promise(r => setTimeout(r, 1000));
-			const job = await (await fetch(`api/refine/${body.jobId}`)).json();
-			st.refine = job;
-			if (job.status !== 'running') break;
-			// update just the progress bar so the page doesn't flicker
-			const panel = document.querySelector(`#team-${n} .refine`);
-			if (panel) panel.outerHTML = refinePanel(n);
-		}
-	} catch (e) {
-		st.refine = {status: 'error', error: e.message};
-	}
-	refineBusy = false;
-	redrawAllTeams();
-}
-
 function build() {
 	const btn = $('#build');
 	btn.disabled = true;
 	btn.textContent = 'Building…';
 	setTimeout(() => {
 		const teams = buildTeams(results, owned, {
-			scorer, teams: 5, maxMegas: Number($('#max-megas').value), includeMegas: $('#include-megas').checked,
+			scorer, teams: 5, includeMegas: $('#include-megas').checked,
 		});
 		renderTeams(teams);
 		btn.disabled = false;
@@ -322,20 +351,9 @@ function wire() {
 		saveOwned(); renderRankings(); $('#team-results').innerHTML = '';
 	});
 	$('#build').addEventListener('click', build);
+	$('#include-megas').addEventListener('change', syncCollection);
 	$('#team-results').addEventListener('click', ev => {
-		const go = ev.target.closest('[data-refine]');
-		if (go && !refineBusy) {
-			const n = Number(go.dataset.refine);
-			refine(n, document.querySelector(`[data-budget="${n}"]`).value);
-		}
-		const reset = ev.target.closest('[data-refine-reset]');
-		if (reset) {
-			const n = Number(reset.dataset.refineReset);
-			// keep any tuned sets, so running again continues from them
-			shownTeams[n].members = teamMembers(n).map(({changes, usage, ...m}) => m);
-			shownTeams[n].refine = null;
-			redrawAllTeams();
-		}
+		if (ev.target.closest('[data-refine-retry]')) fetchTunings();
 	});
 	document.addEventListener('click', ev => {
 		const btn = ev.target.closest('[data-copy]');
@@ -370,7 +388,7 @@ async function main() {
 	// the draft trainer drafts with your built teams (tuned sets included), building them if you haven't yet
 	trainer = initTrainer({results, getBuiltTeams: () => {
 		if (!shownTeams.length && owned.size) {
-			renderTeams(buildTeams(results, owned, {scorer, teams: 5, maxMegas: Number($('#max-megas').value), includeMegas: $('#include-megas').checked}));
+			renderTeams(buildTeams(results, owned, {scorer, teams: 5, includeMegas: $('#include-megas').checked}));
 		}
 		return shownTeams.map((_, n) => teamMembers(n).map(({entry, set}) => ({entry, set})));
 	}});

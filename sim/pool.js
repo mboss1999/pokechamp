@@ -29,9 +29,17 @@ function fallbackResult(job) {
 	return {failed: true};
 }
 
+/** Play one job (a battle, or a typed job from sim/jobs.js) in this thread. Throws if the simulator does. */
+function runJob(j) {
+	if (j.type) return require('./jobs').run(j);
+	const r = require('./battle').runBattle(j.a, j.b, j.seed, j.agents);
+	if (j.picks) return {w: r.winner, picks: r.picks};
+	if (j.hp) return {w: r.winner, hp: r.hpLeft};
+	return r.winner;
+}
 
 if (!isMainThread) {
-	const {runBattle, setProgressHook} = require('./battle');
+	const {setProgressHook} = require('./battle');
 	let currentId = null, lastBeat = 0;
 	setProgressHook(() => {
 		const now = Date.now();
@@ -50,18 +58,16 @@ if (!isMainThread) {
 					if (j.testHook === 'hang') for (;;);
 					if (j.testHook === 'oom') for (const hog = [];;) hog.push(new Array(1e6).fill(1));
 				}
-				if (j.type) return require('./jobs').run(j);
-				const r = runBattle(j.a, j.b, j.seed, j.agents);
-				if (j.picks) return {w: r.winner, picks: r.picks};
-				if (j.hp) return {w: r.winner, hp: r.hpLeft};
-				return r.winner;
+				return runJob(j);
 			} catch (e) {
 				errors.push(String(e && e.stack || e).split('\n').slice(0, 3).join(' | '));
 				return fallbackResult(j);
 			}
 		});
 		currentId = null;
-		parentPort.postMessage({id, results, errors});
+		// this thread's heap, for the pool's memory diagnostics (Pool.memStats)
+		const h = require('v8').getHeapStatistics();
+		parentPort.postMessage({id, results, errors, heap: [h.total_heap_size, h.external_memory || 0]});
 	});
 	return;
 }
@@ -70,6 +76,7 @@ class Pool {
 	constructor(size = Number(process.env.WORKERS) || os.cpus().length) {
 		this.size = size;
 		this.workers = new Set();
+		this.spawned = 0;
 		this.idle = [];
 		this.queue = [];
 		this.nextId = 0;
@@ -92,6 +99,8 @@ class Pool {
 		const w = new Worker(path.join(__dirname, 'pool.js'), {resourceLimits: {maxOldGenerationSizeMb: workerHeapMb(this.size)}});
 		w.current = null;
 		w.dead = false;
+		w.heap = [0, 0];
+		this.spawned++;
 		w.on('message', msg => {
 			const c = w.current;
 			if (msg.beat !== undefined) {
@@ -101,6 +110,7 @@ class Pool {
 			if (!c || c.id !== msg.id) return;
 			clearTimeout(c.timer);
 			w.current = null;
+			if (msg.heap) w.heap = msg.heap;
 			this.battles += msg.results.length;
 			if (msg.errors.length) {
 				this.errors += msg.errors.length;
@@ -154,9 +164,9 @@ class Pool {
 		}, STALL_MS);
 	}
 
-	dispatch(jobs) {
+	dispatch(jobs, priority = 0, token = null) {
 		return new Promise(resolve => {
-			this.queue.push({id: this.nextId++, jobs, resolve, timer: null});
+			this.queue.push({id: this.nextId++, jobs, resolve, timer: null, priority, token});
 			this.pump();
 		});
 	}
@@ -164,7 +174,15 @@ class Pool {
 	pump() {
 		while (this.idle.length && this.queue.length) {
 			const w = this.idle.pop();
-			const c = this.queue.shift();
+			// highest priority first, then first come first served
+			let k = 0;
+			for (let i = 1; i < this.queue.length; i++) if (this.queue[i].priority > this.queue[k].priority) k = i;
+			const c = this.queue.splice(k, 1)[0];
+			if (c.token && c.token.cancelled) { // nobody wants these any more: skip them, unplayed
+				this.idle.push(w);
+				c.resolve(c.jobs.map(j => ({...fallbackResult(j), cancelled: true})));
+				continue;
+			}
 			w.current = c;
 			this.arm(w, c);
 			w.postMessage({id: c.id, jobs: c.jobs});
@@ -173,15 +191,28 @@ class Pool {
 
 	/**
 	 * Run battle jobs [{a, b, seed, ...}] and resolve with one result per job, in order.
-	 * onChunk(first, results) is called as each chunk finishes (for progress reporting).
+	 * onChunk(first, results) is called as each chunk finishes (for progress reporting). Chunks of a run with
+	 * a higher priority go ahead of anything already queued (someone is waiting on them). Setting
+	 * token.cancelled = true skips chunks not yet started; their results come back failed and `cancelled`.
 	 */
-	run(jobs, chunk = 16, onChunk = null) {
+	run(jobs, chunk = 16, onChunk = null, priority = 0, token = null) {
 		const parts = [];
 		for (let i = 0; i < jobs.length; i += chunk) {
-			const p = this.dispatch(jobs.slice(i, i + chunk));
+			const p = this.dispatch(jobs.slice(i, i + chunk), priority, token);
 			parts.push(onChunk ? p.then(r => { onChunk(i, r); return r; }) : p);
 		}
 		return Promise.all(parts).then(r => r.flat());
+	}
+
+	/** Memory diagnostics: process RSS, this thread's heap, live workers' last reported heaps, worker churn. */
+	memStats() {
+		const mb = x => Math.round(x / 1048576);
+		let heap = 0, ext = 0;
+		for (const w of this.workers) { heap += w.heap[0]; ext += w.heap[1]; }
+		const m = process.memoryUsage();
+		return `rss=${mb(m.rss)}MB main=${mb(m.heapTotal)}MB mainExt=${mb(m.external + m.arrayBuffers)}MB ` +
+			`workersHeap=${mb(heap)}MB workersExt=${mb(ext)}MB workers=${this.workers.size} spawned=${this.spawned} ` +
+			`failures=${this.workerFailures} queued=${this.queue.length}`;
 	}
 
 	close() {
@@ -190,4 +221,4 @@ class Pool {
 	}
 }
 
-module.exports = {Pool, isFailed};
+module.exports = {Pool, isFailed, runJob, fallbackResult};

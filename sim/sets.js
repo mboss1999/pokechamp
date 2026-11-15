@@ -465,4 +465,4 @@ function neighbours(entry, set, rng) {
 	return out;
 }
 
-module.exports = {rosterEntries, candidateSets, neighbours, SPREADS};
+module.exports = {rosterEntries, candidateSets, neighbours, SPREADS, TYPE_ITEM, curatedRoles, ROLE, BANNED_ATTACKS, SPECIAL_POWER, attackPower, effectiveness};

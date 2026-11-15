@@ -6,6 +6,16 @@
 
 const S = require('./sets');
 const {mulberry32, hash, seedFrom, clean, setKey, isFailed} = require('./util');
+const {dex} = require('./format');
+
+// Pilots (sim/battle.js AGENTS). The fast one plays the search (screen and confirm); it misjudges status moves,
+// setup above all, so a change that adds or removes one must also win with the strong one, and the strong one
+// plays the final validation (the before/after numbers the app shows). Same split as the set search
+// (sim/setsearch.js) that produced web/data/results.json.
+const FAST = process.env.TUNE_FAST_AGENT || 'heuristic2';
+const STRONG = process.env.TUNE_STRONG_AGENT || 'rollout4all';
+// what one strong-pilot battle costs in fast-pilot battles (Lambda spend caps count in fast battles)
+const STRONG_COST = 25;
 
 const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 
@@ -63,22 +73,23 @@ function makeGauntlet(results, rng, count) {
  * Battle our team against every gauntlet team (each from both sides), returning per-game results.
  * Each game: {win: 0|0.5|1, ourPicks: number[], oppIndex, oppPicks: number[]}.
  */
-async function playGauntlet(pool, team, gauntlet, seeds) {
+async function playGauntlet(pool, team, gauntlet, seeds, priority = 0, token = null, agent = FAST) {
 	const jobs = [];
 	const meta = [];
 	gauntlet.forEach((opp, g) => {
 		for (let k = 0; k < seeds[g].length; k++) {
 			const flip = k % 2 === 1;
-			jobs.push({a: flip ? opp.sets : team, b: flip ? team : opp.sets, seed: seeds[g][k], picks: true});
+			jobs.push({a: flip ? opp.sets : team, b: flip ? team : opp.sets, seed: seeds[g][k], picks: true, agents: [agent, agent]});
 			meta.push({g, flip});
 		}
 	});
-	const res = await pool.run(jobs, 8);
+	// rollout battles take ~60x longer, so they go out in smaller chunks (Lambda invocations have a time limit)
+	const res = await pool.run(jobs, agent.startsWith('rollout') ? 2 : 8, null, priority, token);
 	return res.map((r, x) => {
 		const {g, flip} = meta[x];
 		const ours = flip ? 1 : 0;
 		// a failed battle has no result: NaN, skipped by every statistic below (a drawn battle scores 0.5)
-		if (isFailed(r)) return {win: NaN, failed: true, ourPicks: [], oppIndex: g, oppPicks: []};
+		if (isFailed(r)) return {win: NaN, failed: true, cancelled: !!r.cancelled, ourPicks: [], oppIndex: g, oppPicks: []};
 		const win = r.w === null ? 0.5 : (r.w === ours ? 1 : 0);
 		return {win, ourPicks: r.picks[ours] || [], oppIndex: g, oppPicks: r.picks[1 - ours] || []};
 	});
@@ -96,6 +107,23 @@ function seedsFor(rng, teams, perTeam) {
 	return teams.map(() => Array.from({length: perTeam}, () => seedFrom(rng)));
 }
 
+const statusIds = s => s.moves.map(m => dex.moves.get(m)).filter(m => m.category === 'Status').map(m => m.id).sort().join();
+/** Does going from set a to set b add or remove a status move? */
+const touchesStatus = (a, b) => statusIds(a) !== statusIds(b);
+/** Pairs of attacks doing the same job (same type, category, priority, pivoting): one is a dead slot. */
+function redundantPairs(set) {
+	const ms = set.moves.map(m => dex.moves.get(m));
+	let n = 0;
+	for (let i = 0; i < ms.length; i++) {
+		for (let j = i + 1; j < ms.length; j++) {
+			const a = ms[i], b = ms[j];
+			if (a.category !== 'Status' && a.category === b.category && a.type === b.type && a.priority === b.priority &&
+				!!a.selfSwitch === !!b.selfSwitch) n++;
+		}
+	}
+	return n;
+}
+
 /** Describe what changed between two sets, for the UI. */
 function changes(before, after) {
 	const out = [];
@@ -111,15 +139,45 @@ function changes(before, after) {
 	return out;
 }
 
+// Sample sizes (multiples of the base batches below) and the most rounds of coordinate descent; tuning stops
+// early once a whole round changes nothing. rigorous is what the app uses (see README, "Tune & validate").
+const BUDGETS = {
+	quick: {scale: 0.5, rounds: 1},
+	normal: {scale: 1, rounds: 1},
+	thorough: {scale: 2.5, rounds: 2},
+	rigorous: {scale: 10, rounds: 4}, // 5x left 1.7 ± 1.1 pp on the table vs 10x (sim/tune-study.js, 2026-11-14)
+};
+
 /**
- * @param pool      sim/pool Pool
+ * @param pool      sim/pool Pool (or anything with the same run(jobs, chunk, onChunk, priority, token))
  * @param results   web/data/results.json contents
  * @param team      [{entryId, set}] where set is a results.json set description
- * @param opts      {budget: 'quick'|'normal'|'thorough', onProgress(fraction, message)}
+ * @param opts      {budget: key of BUDGETS, scale/rounds (override the budget's), onProgress(fraction, message),
+ *                   priority (pool priority of this team's battles), shouldStop() (true to abandon the run: it
+ *                   then rejects with an error whose `aborted` is true), salt (different battles, for studies),
+ *                   token ({cancelled}: set it to drop every battle of this run not yet started, then stop),
+ *                   lookahead (members evaluated speculatively past the current one; default pool.speculate,
+ *                   else 0: on a pool whose throughput is the limit, speculation only adds battles)}
+ *
+ * Members are tuned one after another (each sees the changes accepted before it), but their battles are played
+ * speculatively in parallel: every remaining member is evaluated against the current team at once, and when one
+ * accepts a change the evaluations after it are cancelled and redone. The result is identical to evaluating them
+ * strictly one by one; it just needs far fewer round trips, which matters when battles run on Lambda.
  */
 async function refineTeam(pool, results, team, opts = {}) {
 	const progress = opts.onProgress || (() => {});
-	const scale = {quick: 0.5, normal: 1, thorough: 2.5}[opts.budget || 'normal'] || 1;
+	const priority = opts.priority || 0;
+	const runToken = opts.token || {cancelled: false};
+	const checkStop = () => {
+		if (runToken.cancelled || (opts.shouldStop && opts.shouldStop())) {
+			throw Object.assign(new Error('Tuning abandoned'), {aborted: true});
+		}
+	};
+	const budget = BUDGETS[opts.budget || 'normal'] || BUDGETS.normal;
+	const scale = opts.scale || budget.scale;
+	const rounds = opts.rounds || budget.rounds;
+	// how many members past the one being decided to evaluate speculatively (0 = strictly one at a time)
+	const lookahead = opts.lookahead ?? pool.speculate ?? 0;
 	const byId = new Map(results.entries.map((e, i) => [e.id, i]));
 	const members = team.map(t => {
 		const idx = byId.get(t.entryId);
@@ -131,91 +189,164 @@ async function refineTeam(pool, results, team, opts = {}) {
 	});
 	if (members.length < 3) throw new Error('Need at least 3 Pokémon to battle');
 
-	// Three independent batches of battles against strong meta teams:
-	//   screen   cheap first look at every candidate set
-	//   confirm  bigger, separate sample for the two best; a change is only accepted if it wins here
-	//   validate fresh sample comparing the original and final teams (what we report)
-	const rng = mulberry32(hash(members.map(m => m.e.id).join(',')));
+	// Independent batches of battles against strong meta teams:
+	//   screen   cheap first look at every candidate set (fast pilot)
+	//   confirm  bigger, separate sample for the two best; a change is only accepted if it wins here (fast pilot)
+	//   strong   a change that adds or removes a status move must also win here (strong pilot)
+	//   validate fresh sample comparing the original and final teams: what we report (strong pilot)
+	const rng = mulberry32(hash(members.map(m => m.e.id).join(',') + (opts.salt ? `#${opts.salt}` : '')));
 	const batch = (teams, perTeam) => {
 		const gauntlet = makeGauntlet(results, rng, Math.round(teams * scale));
 		return {gauntlet, seeds: seedsFor(rng, gauntlet, perTeam), size: Math.round(teams * scale) * perTeam};
 	};
-	const screen = batch(30, 6), confirm = batch(100, 6), validate = batch(125, 8);
+	// strong: the strong pilot's check of a status change; validate is played by the strong pilot too
+	const screen = batch(30, 6), confirm = batch(100, 6), strong = batch(25, 8), validate = batch(40, 8);
 	const CANDIDATES = 7, FINALISTS = 2;
-	const rounds = scale >= 2 ? 2 : 1;
 
-	const totalBattles = screen.size + confirm.size +
-		rounds * members.length * (CANDIDATES * screen.size + FINALISTS * confirm.size) + 2 * validate.size;
+	// progress counts in fast-pilot battles (a strong battle is worth STRONG_COST); assumes one status check
+	const perRound = members.length * (CANDIDATES * screen.size + FINALISTS * confirm.size);
+	const totalBattles = screen.size + confirm.size + Math.min(rounds, 2) * perRound + STRONG_COST * (2 * strong.size + 2 * validate.size);
 	let done = 0;
-	const tick = (n, msg) => { done += n; progress(Math.min(0.99, done / totalBattles), msg); };
-	const teamWith = (mi, set) => members.map((o, j) => clean(j === mi ? set : o.current));
+	const tick = (n, msg) => { done += n; progress(Math.min(0.99, done / totalBattles), msg); checkStop(); };
+	let played = 0, strongPlayed = 0; // battles actually played, including speculative ones that were thrown away
+	// a battle is skipped if the whole run is cancelled or (for speculative work) its own evaluation is
+	const tokenFor = t => (t ? {get cancelled() { return runToken.cancelled || t.cancelled; }} : runToken);
+	// lane: a speculative evaluation's distance from the member being decided; nearer ones get the cores first, so
+	// little work is thrown away when an earlier member accepts a change
+	const play = (team, b, token = null, lane = 0, agent = FAST) =>
+		playGauntlet(pool, team, b.gauntlet, b.seeds, priority - lane * 1e-4, tokenFor(token), agent)
+		.then(games => {
+			const n = games.filter(g => !g.cancelled).length;
+			if (agent === FAST) played += n; else strongPlayed += n;
+			return games;
+		});
 	const wins = games => games.map(g => g.win);
+	const sets = () => members.map(m => m.current);
+	const teamOf = (snapshot, mi, set) => snapshot.map((o, j) => clean(j === mi ? set : o));
 
 	progress(0, 'Measuring your team as built…');
+	// the original team's validation never depends on the tuning, so it plays alongside everything else
+	const beforeP = play(members.map(m => clean(m.original)), validate, null, 0, STRONG);
 	let [baseScreen, baseConfirm] = await Promise.all([
-		playGauntlet(pool, teamWith(-1), screen.gauntlet, screen.seeds).then(wins),
-		playGauntlet(pool, teamWith(-1), confirm.gauntlet, confirm.seeds).then(wins),
+		play(teamOf(sets(), -1), screen).then(wins),
+		play(teamOf(sets(), -1), confirm).then(wins),
 	]);
 	tick(screen.size + confirm.size, 'Baseline measured');
 
+	// the strong pilot's results for a team as it stands, shared by every status check made against it
+	const strongBases = new Map();
+	const strongBase = (snapshot, token, lane) => {
+		const key = snapshot.map(s => s.key).join('|');
+		let p = strongBases.get(key);
+		if (!p) {
+			p = play(teamOf(snapshot, -1), strong, token, lane, STRONG).then(wins);
+			// a cancelled evaluation's battles are missing: don't let another check reuse them
+			p.then(w => { if (w.some(x => Number.isNaN(x))) strongBases.delete(key); });
+			strongBases.set(key, p);
+		}
+		return p;
+	};
+
+	/** Screen member mi's candidates on a snapshot of the team, then confirm the best two. Returns the change to accept, or null. */
+	async function evaluate(mi, cands, snapshot, bScreen, bConfirm, token, lane) {
+		const screened = await Promise.all(cands.map(c => play(teamOf(snapshot, mi, c), screen, token, lane).then(wins)));
+		if (token.cancelled) return null;
+		const finalists = cands.map((c, i) => ({c, res: screened[i], d: pairedDiff(screened[i], bScreen).diff}))
+			.filter(f => f.d > 0).sort((a, b) => b.d - a.d).slice(0, FINALISTS);
+		const confirmed = await Promise.all(finalists.map(f => play(teamOf(snapshot, mi, f.c), confirm, token, lane).then(wins)));
+		if (token.cancelled) return null;
+		// one-sided 95%: only accept changes that hold up on battles they weren't selected on
+		const passed = [];
+		finalists.forEach((f, i) => {
+			const stat = pairedDiff(confirmed[i], bConfirm);
+			if (stat.diff > 1.645 * stat.se) passed.push({f, conf: confirmed[i], stat});
+		});
+		passed.sort((a, b) => b.stat.diff - a.stat.diff);
+		// The fast pilot misjudges status moves, so a change adding or removing one must also win with the strong
+		// pilot (same one-sided test). If the best fails, the runner-up may still pass.
+		for (const best of passed) {
+			if (!touchesStatus(snapshot[mi], best.f.c)) return best;
+			const [cur, next] = await Promise.all([
+				strongBase(snapshot, token, lane),
+				play(teamOf(snapshot, mi, best.f.c), strong, token, lane, STRONG).then(wins),
+			]);
+			if (token.cancelled) return null;
+			const stat = pairedDiff(next, cur);
+			if (stat.diff > 1.645 * stat.se) return {...best, strongCheck: stat};
+		}
+		return null;
+	}
+
 	for (let round = 0; round < rounds; round++) {
-		let changed = false;
-		for (let mi = 0; mi < members.length; mi++) {
+		// Neighbour sets come from the shared rng; draw them in member order, exactly as a one-by-one pass would.
+		const nbrs = members.map(m => S.neighbours(m.entry, m.current, rng).map(s => { s.key = setKey(s); return s; }));
+		const candidates = (mi, snapshot) => {
 			const m = members[mi];
-			const label = `Tuning ${m.e.mega || m.e.species}${rounds > 1 ? ` (round ${round + 1})` : ''}`;
-			const otherItems = new Set(members.filter((_, j) => j !== mi).map(o => o.current.item).filter(Boolean));
+			const otherItems = new Set(snapshot.filter((_, j) => j !== mi).map(o => o.item).filter(Boolean));
 			const precomputed = [m.e.set, ...m.e.alts].map(d => {
 				const s = toPokemonSet(m.e, d); s.key = setKey(s); return s;
 			});
-			const nbrs = S.neighbours(m.entry, m.current, rng).map(s => { s.key = setKey(s); return s; });
 			const seen = new Set([m.current.key]);
 			const cands = [];
-			for (const s of [...precomputed, ...nbrs]) {
+			const dead = redundantPairs(m.current);
+			for (const s of [...precomputed, ...nbrs[mi]]) {
 				if (seen.has(s.key) || (s.item && otherItems.has(s.item))) continue;
+				// never add a second attack doing the same job as one already there (Dragon Darts + Dragon Claw)
+				if (redundantPairs(s) > dead) continue;
 				seen.add(s.key);
 				cands.push(s);
 				if (cands.length >= CANDIDATES) break;
 			}
-			// screen all candidates in parallel
-			const screened = await Promise.all(cands.map(c =>
-				playGauntlet(pool, teamWith(mi, c), screen.gauntlet, screen.seeds).then(wins)));
-			tick(CANDIDATES * screen.size, label);
-			const finalists = cands.map((c, i) => ({c, res: screened[i], d: pairedDiff(screened[i], baseScreen).diff}))
-				.filter(f => f.d > 0).sort((a, b) => b.d - a.d).slice(0, FINALISTS);
-			// confirm the best on a separate, larger sample
-			const confirmed = await Promise.all(finalists.map(f =>
-				playGauntlet(pool, teamWith(mi, f.c), confirm.gauntlet, confirm.seeds).then(wins)));
-			tick(FINALISTS * confirm.size, label);
-			let best = null;
-			finalists.forEach((f, i) => {
-				const stat = pairedDiff(confirmed[i], baseConfirm);
-				// one-sided 95%: only accept changes that hold up on battles they weren't selected on
-				if (stat.diff > 1.645 * stat.se && (!best || stat.diff > best.stat.diff)) {
-					best = {f, conf: confirmed[i], stat};
+			return cands;
+		};
+		let changed = false;
+		let next = 0;
+		while (next < members.length) {
+			// speculate: evaluate the next `lookahead` members too, against the team as it stands now
+			const snapshot = sets(), token = {cancelled: false};
+			const evals = [];
+			const launch = mi => {
+				if (mi < members.length && !evals[mi]) {
+					evals[mi] = evaluate(mi, candidates(mi, snapshot), snapshot, baseScreen, baseConfirm, token, mi - next);
 				}
-			});
-			if (best) {
-				m.current = best.f.c;
-				baseScreen = best.f.res;
-				baseConfirm = best.conf;
-				changed = true;
+			};
+			for (let mi = next; mi <= next + lookahead; mi++) launch(mi);
+			let accepted = -1;
+			for (let mi = next; mi < members.length; mi++) {
+				launch(mi);
+				const best = await evals[mi];
+				const m = members[mi];
+				tick(perRound / members.length, `Tuning ${m.e.mega || m.e.species}${rounds > 1 ? ` (round ${round + 1})` : ''}`);
+				if (!best) launch(mi + lookahead + 1); // still valid: nothing before it changed
+				if (best) {
+					m.current = best.f.c;
+					baseScreen = best.f.res;
+					baseConfirm = best.conf;
+					changed = true;
+					accepted = mi;
+					break;
+				}
 			}
+			if (accepted < 0) break;
+			// later members were judged next to the old set: drop that work and redo them next to the new one
+			token.cancelled = true;
+			next = accepted + 1;
 		}
-		if (!changed) {
-			tick(members.length * (CANDIDATES * screen.size + FINALISTS * confirm.size) * (rounds - round - 1), '');
-			break;
-		}
+		if (!changed) break;
 	}
 
-	progress(done / totalBattles, 'Validating original vs tuned team on fresh battles…');
+	progress(Math.min(0.99, done / totalBattles), 'Validating original vs tuned team on fresh battles…');
 	const anyChange = members.some(m => m.current !== m.original);
-	const before = await playGauntlet(pool, members.map(m => clean(m.original)), validate.gauntlet, validate.seeds);
-	const after = anyChange ? await playGauntlet(pool, teamWith(-1), validate.gauntlet, validate.seeds) : before;
-	tick(2 * validate.size, 'Validated');
+	const [before, after] = await Promise.all([beforeP, anyChange ? play(teamOf(sets(), -1), validate, null, 0, STRONG) : beforeP]);
+	done = Math.max(done, totalBattles - STRONG_COST * 2 * validate.size);
+	tick(STRONG_COST * 2 * validate.size, 'Validated');
 
 	const diff = pairedDiff(wins(after), wins(before));
 	// Never hand back a team that validates worse than what you started with.
 	const kept = anyChange && diff.diff <= 0;
+	// what was tried and turned down, so a reverted tuning can still be inspected
+	const rejected = kept ? {diff: +diff.diff.toFixed(4), se: +diff.se.toFixed(4),
+		changes: members.map(m => ({entryId: m.e.id, changes: changes(m.original, m.current)})).filter(x => x.changes.length)} : null;
 	if (kept) for (const m of members) m.current = m.original;
 	const final = (kept ? before : after).filter(g => !g.failed);
 
@@ -249,6 +380,7 @@ async function refineTeam(pool, results, team, opts = {}) {
 		after: summarize(final),
 		improvement: {diff: kept ? 0 : +diff.diff.toFixed(4), se: +diff.se.toFixed(4)},
 		revertedTuning: kept,
+		rejectedTuning: rejected,
 		members: members.map((m, i) => ({
 			entryId: m.e.id,
 			original: describe(m.original),
@@ -258,8 +390,12 @@ async function refineTeam(pool, results, team, opts = {}) {
 			leadRate: +leadRate[i].toFixed(3),
 		})),
 		threats: threats.slice(0, 8),
-		battles: done,
+		battles: played,
+		strongBattles: strongPlayed,
+		// in fast-pilot battles, for spend caps
+		cost: played + STRONG_COST * strongPlayed,
+		agents: {search: FAST, strong: STRONG},
 	};
 }
 
-module.exports = {refineTeam, toPokemonSet};
+module.exports = {refineTeam, toPokemonSet, BUDGETS, makeGauntlet, playGauntlet, seedsFor, pairedDiff, FAST, STRONG, STRONG_COST};

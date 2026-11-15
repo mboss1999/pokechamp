@@ -12,6 +12,11 @@ const AGENTS = {
 	rollout2: (b, s) => decideLookahead(b, s, {rollout: 2}),
 	rollout4: (b, s) => decideLookahead(b, s, {rollout: 4}),
 	rollout4wide: (b, s) => decideLookahead(b, s, {rollout: 4, mySwitches: 2, theirMoves: 3}),
+	// v2 tactical rules (sim/agent.js tacticalValue). rollout4all also simulates every one of its moves, not
+	// just the heuristic's top 3, so a move the heuristic underrates still gets judged by its outcome.
+	heuristic2: (b, s) => decide(b, s, {v2: true}),
+	rollout4v2: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true}),
+	rollout4all: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true, myMoves: 4, theirMoves: 3}),
 };
 // Analysis-engine agents (sim/engine.js), named mc<determinizations>x<rollouts per cell>. Hidden-info aware.
 // mcfull* see the opponent's sets (like the other AIs); a diagnostic for the cost of hidden information.

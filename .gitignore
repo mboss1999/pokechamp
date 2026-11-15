@@ -12,3 +12,8 @@ node_modules/
 out/
 out-*/
 aws/.last-run*
+
+# Team tunings computed for this player (cache; recomputed when missing)
+web/data/tuned.json
+aws/.last-sharded
+aws/.sharded-*

@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-lambda": "^3.1169.0",
     "pokemon-showdown": "file:vendor/pokemon-showdown"
   },
   "private": true
