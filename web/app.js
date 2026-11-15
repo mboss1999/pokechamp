@@ -3,6 +3,12 @@ import {$, esc, pct, pctClass, margin, sprite, typeBadges, displayName, setBox} 
 import {initTrainer} from './trainer.js';
 
 const STORE_KEY = 'champions-collection-v1';
+// Singles (BSS: bring 6, pick 3) or doubles (VGC: bring 6, pick 4). Your collection is shared by both.
+const MODE_KEY = 'champions-format-v1';
+const MODE = (() => { try { return localStorage.getItem(MODE_KEY) === 'doubles' ? 'doubles' : 'singles'; } catch { return 'singles'; } })();
+const DOUBLES = MODE === 'doubles';
+// what a matchup cell means, for labels
+const MATCHUP_KIND = DOUBLES ? '2v2 with a meta partner each, HP margin' : '1v1 HP margin';
 
 let results, scorer, species, owned, openSpecies = null, trainer = null;
 
@@ -108,7 +114,7 @@ function detailRow(s) {
 		return `<div class="card"><h3>${esc(displayName(e))} · ${e.rating}</h3>
 			${setBox(e, e.set)}
 			<div class="hint">Set won ${pct(e.setWinRate)} of its tuning battles.</div>${alts}</div>
-			<div class="card"><h3>${esc(displayName(e))} beats (1v1 HP margin)</h3>${matchupList(i, true)}</div>
+			<div class="card"><h3>${esc(displayName(e))} beats (${MATCHUP_KIND})</h3>${matchupList(i, true)}</div>
 			<div class="card"><h3>${esc(displayName(e))} struggles with</h3>${matchupList(i, false)}</div>`;
 	}).join('');
 	return `<tr class="detail"><td colspan="8"><div class="detail-grid">${cards}</div></td></tr>`;
@@ -134,7 +140,7 @@ function renderTeams(teams) {
 	shownTeams = teams.map(t => ({team: t, members: assignSets(results, t.members), refine: null}));
 	box.innerHTML = shownTeams.map((_, n) => `<section class="team" id="team-${n}">${teamHtml(n)}</section>`).join('');
 	trainer?.refresh();
-	fetchTunings();
+	if (!DOUBLES) fetchTunings(); // team tuning is singles-only so far
 }
 
 // ---- tunings: fetched from the server, which has usually finished them already ----
@@ -230,7 +236,7 @@ function teamHtml(n) {
 			${m.usage ? `<div class="usage">Brought ${pct(m.usage.bringRate)} · Leads ${pct(m.usage.leadRate)}</div>` : ''}
 		</div>`).join('')}</div>
 		<div class="card cover-wrap">
-			<h3>Your best answer to each top threat (1v1 HP margin) ${weak.length ? `· <span class="bad">${weak.length} weak spot${weak.length > 1 ? 's' : ''}</span>` : ''}</h3>
+			<h3>Your best answer to each top threat (${MATCHUP_KIND}) ${weak.length ? `· <span class="bad">${weak.length} weak spot${weak.length > 1 ? 's' : ''}</span>` : ''}</h3>
 			<div class="cover">${cov.map(c => {
 				const th = results.entries[c.threat], ans = results.entries[c.best.m];
 				return `<div class="cover-row">${sprite(th)}${esc(displayName(th))}<span class="arrow">←</span>${sprite(ans)}${margin(c.best.p)}</div>`;
@@ -241,6 +247,7 @@ function teamHtml(n) {
 const pts = x => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)}`;
 
 function refinePanel(n) {
+	if (DOUBLES) return '';
 	const r = shownTeams[n].refine;
 	if (!r || r.status === 'unknown') {
 		return `<div class="refine card"><div class="refine-text"><b>Tuning…</b> Connecting to the simulator.</div></div>`;
@@ -367,12 +374,33 @@ function wire() {
 	});
 }
 
+function wireMode() {
+	for (const b of document.querySelectorAll('.mode button')) {
+		b.setAttribute('aria-pressed', String(b.dataset.mode === MODE));
+		b.addEventListener('click', () => {
+			if (b.dataset.mode === MODE) return;
+			try { localStorage.setItem(MODE_KEY, b.dataset.mode); } catch {}
+			location.reload();
+		});
+	}
+}
+
 async function main() {
+	wireMode();
+	const file = DOUBLES ? 'data/doubles-results.json' : 'data/results.json';
 	try {
-		results = await (await fetch('data/results.json')).json();
+		const resp = await fetch(file);
+		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+		results = await resp.json();
 	} catch (e) {
-		$('#meta').textContent = 'No simulation results found. Run the pipeline to create web/data/results.json.';
+		$('#meta').textContent = `No ${MODE} simulation results found. Run the pipeline to create web/${file}.`;
 		return;
+	}
+	if (DOUBLES) {
+		// team preview practice and team tuning run the singles simulator for now
+		document.querySelector('.tabs button[data-tab=draft]').hidden = true;
+		$('#rankings-hint').textContent = 'Tick the Pokémon you have. Ratings come from simulated bring-6-pick-4 doubles battles; ' +
+			'click a row for its sets and matchups.';
 	}
 	scorer = makeScorer(results);
 	species = groupSpecies(results.entries);
@@ -386,7 +414,7 @@ async function main() {
 	wire();
 	renderRankings();
 	// the draft trainer drafts with your built teams (tuned sets included), building them if you haven't yet
-	trainer = initTrainer({results, getBuiltTeams: () => {
+	if (!DOUBLES) trainer = initTrainer({results, getBuiltTeams: () => {
 		if (!shownTeams.length && owned.size) {
 			renderTeams(buildTeams(results, owned, {scorer, teams: 5, includeMegas: $('#include-megas').checked}));
 		}

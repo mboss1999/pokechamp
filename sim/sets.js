@@ -369,6 +369,15 @@ const ROLE_STYLE = {
 	'Bulky Attacker': {spread: 'bulky', items: ['Leftovers', 'Sitrus Berry']},
 	'Bulky Setup': {spread: 'bulky', items: ['Leftovers', 'Sitrus Berry']},
 	'Bulky Support': {spread: 'wallDef', items: ['Leftovers', 'Sitrus Berry']},
+	// doubles roles (doubles-sets.json)
+	'Doubles Support': {spread: 'bulky', items: ['Sitrus Berry', 'Focus Sash']},
+	'Offensive Protect': {spread: 'strong', items: ['Life Orb', 'Sitrus Berry']},
+	'Doubles Bulky Setup': {spread: 'bulky', items: ['Sitrus Berry', 'Leftovers']},
+	'Doubles Setup Sweeper': {spread: 'fast', items: ['Life Orb', 'Focus Sash']},
+	'Doubles Fast Attacker': {spread: 'fast', items: ['Life Orb', 'Focus Sash']},
+	'Doubles Bulky Attacker': {spread: 'bulky', items: ['Sitrus Berry', 'Life Orb']},
+	'Doubles Wallbreaker': {spread: 'strong', items: ['Life Orb', 'Expert Belt']},
+	'Choice Item user': {spread: 'fast', items: ['Choice Scarf', 'Expert Belt']}, // Champions has no Band or Specs
 };
 
 let curated = null;
@@ -376,7 +385,8 @@ function curatedRoles(id) {
 	if (curated === null) {
 		curated = {};
 		try {
-			const file = path.join(path.dirname(require.resolve('pokemon-showdown')), '..', 'data', 'random-battles', 'champions', 'sets.json');
+			const name = F.GAME_TYPE === 'doubles' ? 'doubles-sets.json' : 'sets.json';
+			const file = path.join(path.dirname(require.resolve('pokemon-showdown')), '..', 'data', 'random-battles', 'champions', name);
 			curated = JSON.parse(fs.readFileSync(file, 'utf8'));
 		} catch {}
 	}

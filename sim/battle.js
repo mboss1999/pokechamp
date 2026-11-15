@@ -17,6 +17,9 @@ const AGENTS = {
 	heuristic2: (b, s) => decide(b, s, {v2: true}),
 	rollout4v2: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true}),
 	rollout4all: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true, myMoves: 4, theirMoves: 3}),
+	// doubles (FORMAT=gen9championsvgc2026regmc; sim/dagent.js)
+	dheuristic: (b, s) => require('./dagent').decideDoubles(b, s),
+	dgreedy: (b, s) => require('./dagent').decideGreedy(b, s),
 };
 // Analysis-engine agents (sim/engine.js), named mc<determinizations>x<rollouts per cell>. Hidden-info aware.
 // mcfull* see the opponent's sets (like the other AIs); a diagnostic for the cost of hidden information.
@@ -60,6 +63,8 @@ function runBattle(teamA, teamB, seed, agents = ['heuristic', 'heuristic']) {
 	return out;
 }
 
+const choiceErrors = {count: 0, samples: []};
+
 /** Play `battle` to the end (or the turn limit) with an agent on each side. */
 function playOut(battle, agents = ['heuristic', 'heuristic'], maxTurns = MAX_TURNS) {
 	const pilots = agents.map(a => AGENTS[a] || decide);
@@ -74,7 +79,12 @@ function playOut(battle, agents = ['heuristic', 'heuristic'], maxTurns = MAX_TUR
 		let acted = false;
 		battle.sides.forEach((side, i) => {
 			if (battle.ended || choices[i] === null) return;
-			if (!battle.choose(side.id, choices[i])) battle.choose(side.id, 'default');
+			if (!battle.choose(side.id, choices[i])) {
+				// a pilot bug, not a legal choice: count it (choiceErrors) and let the simulator pick
+				choiceErrors.count++;
+				if (choiceErrors.samples.length < 5) choiceErrors.samples.push(`${choices[i]} :: ${side.choice.error || ''}`);
+				battle.choose(side.id, 'default');
+			}
 			acted = true;
 		});
 		if (!acted) break;
@@ -85,4 +95,4 @@ function playOut(battle, agents = ['heuristic', 'heuristic'], maxTurns = MAX_TUR
 	return battle;
 }
 
-module.exports = {runBattle, playOut, setProgressHook, AGENTS, MAX_TURNS};
+module.exports = {runBattle, playOut, setProgressHook, AGENTS, MAX_TURNS, choiceErrors};

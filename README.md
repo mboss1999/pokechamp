@@ -1,7 +1,8 @@
 # Champions Team Builder
 
 A team builder for **Pokémon Champions ranked singles** (Showdown format `[Gen 9 Champions] BSS Reg M-C`:
-bring 6, pick 3, level 50, 66 stat points with at most 32 per stat, Champions item pool).
+bring 6, pick 3, level 50, 66 stat points with at most 32 per stat, Champions item pool), and (in progress)
+**doubles** (`[Gen 9 Champions] VGC 2026 Reg M-C`: bring 6, pick 4, open team sheets).
 Every recommendation comes from simulated battles run with Pokémon Showdown's own battle engine.
 
 ```
@@ -261,6 +262,29 @@ node sim/pipeline.js --stages export       # rebuild results.json from checkpoin
 
 `--scale` multiplies every sample size. `--limit N` runs on N roster entries for testing. Checkpoints go to `--out`
 (default `out/`).
+
+### Doubles
+
+`FORMAT=gen9championsvgc2026regmc` runs everything in doubles (`sim/format.js` reads the format, its bring size and
+game type). The pipeline then uses the doubles pilot, Showdown's curated doubles movepools
+(`doubles-sets.json`) as seeds, 3 partners per set-search battle, and writes `web/data/doubles-results.json`:
+
+```bash
+FORMAT=gen9championsvgc2026regmc node sim/pipeline.js --limit 12 --scale 0.25 --passes 1 --out out/dtest
+```
+
+- **Pilot** (`sim/dagent.js`, agent `dheuristic`): the singles agent's damage estimates and move values, plus target
+  choice, spread moves (0.75x per target; ally-hitting moves like Earthquake are penalised unless the partner
+  protects), both slots chosen together (no attack into a foe the partner already KOs, a bonus for double-target
+  KOs), and rules for Fake Out, Protect, Follow Me / Rage Powder, Helping Hand, Tailwind, Trick Room, Wide Guard and
+  speed control. Team preview brings the 4 with the best matchups and leads with Fake Out, speed control and
+  Intimidate users. On Showdown's random doubles teams it beats `dgreedy` (every slot clicks its most damaging
+  attack) 69.5% of 400 games and plays itself to 50.5%. There is no doubles lookahead pilot yet, so the set search
+  has no strong-pilot check in doubles.
+- **Matchups** are 2v2: each Pokémon gets a meta partner, and the two battles of a pair swap the partners so partner
+  luck cancels. The team builder blends a team's 4 best answers to each threat (40/30/20/10).
+- **App:** the Singles / Doubles switch in the header picks the results file. Team tuning and draft practice are
+  singles-only for now.
 
 ### On AWS
 

@@ -1,8 +1,13 @@
 'use strict';
 // Offline simulation pipeline. Stages (each checkpointed to --out):
 //   sets      find the best set(s) for every roster entry (successive halving + hill climbing)
-//   matchups  1v1 win-rate matrix between every pair of entries' best sets
-//   ladder    random bring-6-pick-3 team battles, fitted into a per-entry strength rating
+//   matchups  1v1 win-rate matrix between every pair of entries' best sets (doubles: 2v2, each with a meta
+//             partner, partners swapped between the two battles of a pair so partner luck cancels)
+//   ladder    random bring-6-pick-3 team battles (doubles: pick 4), fitted into a per-entry strength rating
+//
+// The format comes from FORMAT (sim/format.js): FORMAT=gen9championsvgc2026regmc runs doubles, with the doubles
+// pilot (sim/dagent.js), Showdown's curated doubles movepools, 3 partners per set-search battle and output to
+// web/data/doubles-results.json.
 //   export    bundle everything into web/data/results.json for the team builder UI
 //
 // Usage: node sim/pipeline.js [--scale 1] [--stages sets,matchups,ladder,export] [--out out] [--limit N]
@@ -19,6 +24,8 @@ const arg = (name, def) => {
 	const i = argv.indexOf('--' + name);
 	return i >= 0 ? argv[i + 1] : def;
 };
+const DOUBLES = F.GAME_TYPE === 'doubles';
+const PARTNERS = F.PICK_SIZE - 1; // teammates of the Pokémon whose set is being searched: it always plays
 const SCALE = Number(arg('scale', 1));
 const STAGES = arg('stages', 'sets,matchups,ladder,export').split(',');
 const OUT = path.resolve(arg('out', 'out'));
@@ -27,14 +34,17 @@ const PASSES = Number(arg('passes', 2));
 // Battle AI per stage: 'heuristic' (fast) or 'rollout4' (one-turn lookahead with 4-turn rollouts; beats the
 // heuristic ~63% head-to-head but is ~75x slower per battle). --agent sets the default for every stage;
 // --sets-agent, --matchups-agent and --ladder-agent override it. See sim/battle.js and sim/compare.js.
-const AGENT = arg('agent', 'heuristic');
+const AGENT = arg('agent', DOUBLES ? 'dheuristic' : 'heuristic');
 // The sets stage defaults to heuristic2 (v2 tactical rules), which values status moves the v1 pilot ignores.
-const agentsFor = stage => { const a = arg(stage + '-agent', stage === 'sets' ? arg('agent', 'heuristic2') : AGENT); return [a, a]; };
+const agentsFor = stage => {
+	const a = arg(stage + '-agent', stage === 'sets' ? arg('agent', DOUBLES ? 'dheuristic' : 'heuristic2') : AGENT);
+	return [a, a];
+};
 // Set search: 'descent' (sim/setsearch.js: every move slot, item, ability and spread raced with paired
 // battles and confirmed on fresh ones) or 'halving' (the old random hill climb, kept for comparison).
 const SEARCH = arg('search', 'descent');
 // Stronger pilot that checks each searched set against its starting point ('none' to skip).
-const SETS_CHECK = arg('sets-check-agent', 'rollout4all');
+const SETS_CHECK = arg('sets-check-agent', DOUBLES ? 'none' : 'rollout4all'); // no doubles lookahead pilot yet
 // Optional rating weights for drawing partners and opponents (a results.json); uniform without.
 const WEIGHTS = arg('weights', '');
 const SETS_AGENTS = agentsFor('sets'), MATCHUPS_AGENTS = agentsFor('matchups'), LADDER_AGENTS = agentsFor('ladder');
@@ -49,7 +59,7 @@ const PARTS = Number(arg('parts', 0));
 // Starting sets from an earlier run's results.json: they seed the population (so partners and opponents are
 // realistic from the start) and join the archetype candidates in the first pass.
 const INIT_SETS = arg('init-sets', '');
-const WEB_OUT = path.resolve(arg('web', path.join(__dirname, '..', 'web', 'data', 'results.json')));
+const WEB_OUT = path.resolve(arg('web', path.join(__dirname, '..', 'web', 'data', DOUBLES ? 'doubles-results.json' : 'results.json')));
 fs.mkdirSync(OUT, {recursive: true});
 
 const n = x => Math.max(4, Math.round(x * SCALE));
@@ -181,7 +191,7 @@ async function stageSets(pool) {
 	async function evaluate(entry, candidates, games, rng, stats) {
 		const contexts = [];
 		for (let g = 0; g < games; g++) {
-			const partners = sampleEntries(rng, 2, new Set([entry.species]));
+			const partners = sampleEntries(rng, PARTNERS, new Set([entry.species]));
 			const opps = sampleEntries(rng, 6);
 			contexts.push({partners: teamFrom(partners, popSets), opps: teamFrom(opps, popSets), seed: seedFrom(rng)});
 		}
@@ -238,7 +248,7 @@ async function stageSets(pool) {
 	const optionsOf = id => [pop.get(id), ...(popAlts.get(id) || [])].map(clean);
 	const context = (rng, subject) => {
 		const species = new Set([subject.species]), used = new Set(), partners = [];
-		for (let guard = 0; partners.length < 2 && guard < 1000; guard++) {
+		for (let guard = 0; partners.length < PARTNERS && guard < 1000; guard++) {
 			const e = drawEntry(rng);
 			if (species.has(e.species)) continue;
 			const opts = optionsOf(e.id).filter(x => !x.item || !used.has(x.item));
@@ -337,11 +347,38 @@ async function stageMatchups(pool, sets) {
 	log(`matchups: ${N}x${N} pairs, ${K} battles each`);
 	const rng = mulberry32(12345);
 	const jobs = [], index = [];
+	// doubles partner: another entry's best set (an alternate if the items clash)
+	// (redrawn until one has a set whose item clashes with neither subject: a side with a single Pokémon crashes
+	// Showdown's doubles engine)
+	const partnerFor = (rng, exclude, items) => {
+		for (let guard = 0; guard < 200; guard++) {
+			const [e] = sampleEntries(rng, 1, exclude);
+			const opts = [sets[e.id].best, ...sets[e.id].alts.map(a => a.set)];
+			const o = opts.find(x => !x.item || !items.includes(x.item));
+			if (o) return clean(o);
+		}
+		throw new Error('no partner without an item clash');
+	};
 	for (let i = 0; i < N; i++) {
 		for (let j = i + 1; j < N; j++) {
-			const a = [clean(sets[ids[i]].best)], b = [clean(sets[ids[j]].best)];
+			const si = clean(sets[ids[i]].best), sj = clean(sets[ids[j]].best);
+			let P = null, Q = null;
 			for (let k = 0; k < K; k++) {
 				const flip = k % 2 === 1;
+				let a = [si], b = [sj];
+				if (DOUBLES) {
+					// battles 2m and 2m+1 share partners P and Q, swapped, so neither side keeps the better one
+					if (k % 2 === 0) {
+						const ex = new Set([byId.get(ids[i]).species, byId.get(ids[j]).species]);
+						const items = [si.item, sj.item].filter(Boolean);
+						P = partnerFor(rng, ex, items);
+						ex.add(P.species);
+						Q = partnerFor(rng, ex, items);
+					}
+					const [pi, pj] = flip ? [Q, P] : [P, Q];
+					a = [si, pi];
+					b = [sj, pj];
+				}
 				jobs.push({a: flip ? b : a, b: flip ? a : b, seed: seedFrom(rng), hp: true, agents: MATCHUPS_AGENTS});
 				index.push([i, j, flip]);
 			}
@@ -456,7 +493,7 @@ function stageExport(sets, matchups, ladder) {
 	});
 	const result = {
 		meta: {
-			format: F.format.name, formatId: F.FORMAT_ID, generatedAt: new Date().toISOString(), scale: SCALE, agents: {sets: SETS_AGENTS[0], matchups: MATCHUPS_AGENTS[0], ladder: LADDER_AGENTS[0]},
+			format: F.format.name, formatId: F.FORMAT_ID, gameType: F.GAME_TYPE, pickSize: F.PICK_SIZE, generatedAt: new Date().toISOString(), scale: SCALE, agents: {sets: SETS_AGENTS[0], matchups: MATCHUPS_AGENTS[0], ladder: LADDER_AGENTS[0]},
 			ladderGames: ladder.games, matchupBattlesPerPair: matchups.K,
 			showdownVersion: require('pokemon-showdown/package.json').version,
 		},

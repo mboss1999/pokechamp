@@ -14,7 +14,9 @@
 #      run with 1 GB workers, a 40 GB main heap and 32 entries in flight used ~122 of 128 GB and hung all 4 machines.
 #      MALLOC_ARENA_MAX (2): with 600 MB heaps a rerun still reached ~90 GB within 5 minutes, which points at glibc's
 #      per-thread malloc arenas (up to 8 per core) fragmenting across 64 worker threads, not at the JS heaps.
-# Starting sets and rating weights come from the current web/data/results.json.
+#      FORMAT (unset = singles; gen9championsvgc2026regmc = doubles: doubles pilot for every stage, no strong-pilot
+#      checks, starting sets from web/data/doubles-results.json if there is one).
+# Starting sets and rating weights come from the current web/data/results.json (doubles: doubles-results.json).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,9 +28,15 @@ NEW_GROUP=0
 if [ -z "${GROUP:-}" ]; then GROUP="$(date -u +%Y%m%d-%H%M%S)-sharded"; NEW_GROUP=1; fi
 STATE="aws/.sharded-$GROUP"
 SHARED="s3://$BUCKET/runs/$GROUP/shared"
-ARGS="--scale ${SCALE:-4} --matchups-agent ${MATCHUPS_AGENT:-rollout4all} --ladder-agent ${LADDER_AGENT:-rollout4all}"
+if [ -n "${FORMAT:-}" ] && [[ "$FORMAT" == *vgc* || "$FORMAT" == *doubles* ]]; then
+	STRONG=dheuristic; INIT=web/data/doubles-results.json; FORMAT_ENV="FORMAT=$FORMAT"
+else
+	STRONG=rollout4all; INIT=web/data/results.json; FORMAT_ENV="${FORMAT:+FORMAT=$FORMAT}"
+fi
+ARGS="--scale ${SCALE:-4} --matchups-agent ${MATCHUPS_AGENT:-$STRONG} --ladder-agent ${LADDER_AGENT:-$STRONG}"
 ARGS="$ARGS --matchup-k ${MATCHUP_K:-16} --ladder-games ${LADDER_GAMES:-60000}"
-ARGS="$ARGS --init-sets web/data/results.json --weights web/data/results.json ${EXTRA_ARGS:-}"
+[ -f "$INIT" ] && ARGS="$ARGS --init-sets $INIT --weights $INIT"
+ARGS="$ARGS ${EXTRA_ARGS:-}"
 [ "$NEW_GROUP" = 1 ] && echo "shards=$SHARDS args=$ARGS" > "$STATE"
 
 for k in $(seq 0 $((SHARDS - 1))); do
@@ -37,7 +45,7 @@ for k in $(seq 0 $((SHARDS - 1))); do
 	RUN="$GROUP-s$k-$(date -u +%H%M%S)"
 	echo "== shard $k/$SHARDS: run $RUN${PREV:+ (resuming $PREV)}"
 	RUN_ID="$RUN" RESUME_RUN="$PREV" KEEP_LAST_RUN=1 MAX_HOURS="${MAX_HOURS:-20}" \
-		COMMAND="env MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-2} WORKER_HEAP_MB=${WORKER_HEAP_MB:-600} MAIN_HEAP_MB=${MAIN_HEAP_MB:-16000} node sim/shard.js --shard $k/$SHARDS --shared $SHARED $ARGS --concurrency ${CONCURRENCY:-16} --out out" aws/launch.sh
+		COMMAND="env $FORMAT_ENV MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-2} WORKER_HEAP_MB=${WORKER_HEAP_MB:-600} MAIN_HEAP_MB=${MAIN_HEAP_MB:-16000} node sim/shard.js --shard $k/$SHARDS --shared $SHARED $ARGS --concurrency ${CONCURRENCY:-16} --out out" aws/launch.sh
 	echo "shard $k $RUN" >> "$STATE"
 	sleep 1
 done

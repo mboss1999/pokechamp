@@ -12,7 +12,8 @@ const validator = new TeamValidator(format);
 const STAT_POINT_TOTAL = 66;
 const STAT_POINT_MAX = 32;
 const TEAM_SIZE = 6;
-const PICK_SIZE = 3;
+const PICK_SIZE = Dex.formats.getRuleTable(format).pickedTeamSize || 3; // 3 in singles (BSS), 4 in doubles (VGC)
+const GAME_TYPE = format.gameType; // 'singles' | 'doubles'
 
 // Collapse purely cosmetic formes (Vivillon patterns, Alcremie flavours, ...)
 // into their base species so the roster lists each "real" Pokémon once.
@@ -83,6 +84,6 @@ function validateTeam(team) {
 
 module.exports = {
 	Dex, dex, format, FORMAT_ID, toID, validator,
-	STAT_POINT_TOTAL, STAT_POINT_MAX, TEAM_SIZE, PICK_SIZE,
+	STAT_POINT_TOTAL, STAT_POINT_MAX, TEAM_SIZE, PICK_SIZE, GAME_TYPE,
 	legalRoster, legalItems, megaOptions, learnableMoves, validateSet, validateTeam,
 };

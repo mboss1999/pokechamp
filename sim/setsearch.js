@@ -31,6 +31,10 @@ const {dex} = F;
 const S = require('./sets');
 const {clean, setKey, seedFrom, isFailed, mulberry32, hash} = require('./util');
 const {knownStatus} = require('./agent');
+const DOUBLES = F.GAME_TYPE === 'doubles';
+const {DOUBLES_STATUS} = require('./dagent');
+// spread moves are a doubles staple: every one the Pokémon learns is worth a look
+const SPREAD = new Set(['allAdjacentFoes', 'allAdjacent']);
 
 const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 const ITEMS = ['Life Orb', 'Choice Scarf', 'Focus Sash', 'Leftovers', 'Sitrus Berry', 'Lum Berry', 'Expert Belt',
@@ -53,7 +57,7 @@ function movePool(entry) {
 	}
 	const out = new Map();
 	for (const m of learn) {
-		if (m.category === 'Status' && (knownStatus(m.id) || curated.has(m.id))) out.set(m.id, m);
+		if (m.category === 'Status' && (knownStatus(m.id) || curated.has(m.id) || (DOUBLES && DOUBLES_STATUS.has(m.id)))) out.set(m.id, m);
 	}
 	const attacks = learn.filter(m => m.category !== 'Status' && !m.isZ &&
 		(!S.BANNED_ATTACKS.has(m.id) || S.SPECIAL_POWER[m.id]) &&
@@ -71,7 +75,9 @@ function movePool(entry) {
 		list.sort((x, y) => S.attackPower(y, ctx) - S.attackPower(x, ctx));
 		list.slice(0, list[0].category === weakCat ? 1 : 2).forEach(m => out.set(m.id, m));
 	}
-	for (const m of attacks) if (m.priority > 0 || m.selfSwitch || curated.has(m.id) || S.SPECIAL_POWER[m.id]) out.set(m.id, m);
+	for (const m of attacks) {
+		if (m.priority > 0 || m.selfSwitch || curated.has(m.id) || S.SPECIAL_POWER[m.id] || (DOUBLES && SPREAD.has(m.target))) out.set(m.id, m);
+	}
 	return [...out.values()];
 }
 

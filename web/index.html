@@ -12,6 +12,10 @@
 			<h1>Champions Team Builder</h1>
 			<p class="sub" id="meta">Loading simulation results…</p>
 		</div>
+		<div class="mode" role="group" aria-label="Format">
+			<button data-mode="singles" aria-pressed="true">Singles</button>
+			<button data-mode="doubles" aria-pressed="false">Doubles</button>
+		</div>
 		<nav class="tabs" role="tablist">
 			<button role="tab" data-tab="rankings" aria-selected="true">Rankings</button>
 			<button role="tab" data-tab="teams" aria-selected="false">Build teams <span class="count" id="owned-count">0</span></button>
@@ -34,7 +38,7 @@
 				<button id="clear-owned" class="ghost">Clear collection</button>
 				<button id="io-collection" class="ghost">Import / export</button>
 			</div>
-			<p class="hint">Tick the Pokémon you have. Ratings come from simulated bring-6-pick-3 battles; click a row for its sets and matchups.</p>
+			<p class="hint" id="rankings-hint">Tick the Pokémon you have. Ratings come from simulated bring-6-pick-3 battles; click a row for its sets and matchups.</p>
 			<div class="table-wrap">
 				<table id="ranking-table">
 					<thead>

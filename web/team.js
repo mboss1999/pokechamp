@@ -21,10 +21,11 @@ export function threatWeights(entries, temperature = 120) {
 	return w.map(x => x / sum);
 }
 
-// You bring 3 of your 6, and a threat is rarely beaten by one perfect counter, so a team's answer to a
-// threat is a weighted blend of its three best 1v1 matchups against it. Only one Pokémon per side can Mega
-// Evolve in a battle, and the 1v1 rates assume a Stone holder always does, so at most one of the three may be a Mega.
-const ANSWER_WEIGHTS = [0.5, 0.3, 0.2];
+// You bring 3 of your 6 (4 in doubles), and a threat is rarely beaten by one perfect counter, so a team's answer to
+// a threat is a weighted blend of its best matchups against it, one per Pokémon you bring (1v1 in singles; 2v2
+// with a meta partner on each side in doubles). Only one Pokémon per side can Mega Evolve in a battle, and the
+// matchup rates assume a Stone holder always does, so at most one of those answers may be a Mega.
+const ANSWER_WEIGHTS = {3: [0.5, 0.3, 0.2], 4: [0.4, 0.3, 0.2, 0.1]};
 
 export function makeScorer(results, opts = {}) {
 	const {entries} = results;
@@ -32,29 +33,46 @@ export function makeScorer(results, opts = {}) {
 	const W = threatWeights(entries, opts.temperature);
 	const strength = entries.map(e => (e.rating - 1500) / 100);
 	const RATING_WEIGHT = opts.ratingWeight ?? 0.06;
+	const AW = ANSWER_WEIGHTS[results.meta.pickSize] || ANSWER_WEIGHTS[3];
+	const K = AW.length;
 
 	const isMega = entries.map(e => !!e.megaItem);
 
-	/** The three best answers to threat t, using at most one Mega. */
-	function topAnswers(members, t) {
-		let a = 0, b = 0, c = 0, mega = 0;
+	// the best four non-Mega answers, then the best Mega takes a slot only if it beats the K-th (weights past K
+	// are 0). score() inlines the same ranking for speed.
+	const [w0, w1, w2, w3 = 0] = AW;
+	let t0 = 0, t1 = 0, t2 = 0, t3 = 0;
+	function rankAnswers(members, t) {
+		t0 = t1 = t2 = t3 = 0;
+		let mega = 0;
 		for (const m of members) {
 			const p = M[m * N + t];
 			if (isMega[m]) { if (p > mega) mega = p; continue; }
-			if (p > a) { c = b; b = a; a = p; } else if (p > b) { c = b; b = p; } else if (p > c) c = p;
+			if (p > t0) { t3 = t2; t2 = t1; t1 = t0; t0 = p; } else if (p > t1) { t3 = t2; t2 = t1; t1 = p; } else if (p > t2) { t3 = t2; t2 = p; } else if (p > t3) t3 = p;
 		}
-		// the best Mega takes a slot only if it beats the third-best non-Mega
-		if (mega > a) return [mega, a, b];
-		if (mega > b) return [a, mega, b];
-		if (mega > c) return [a, b, mega];
-		return [a, b, c];
+		const p = mega;
+		if (p > t0) { t3 = t2; t2 = t1; t1 = t0; t0 = p; } else if (p > t1) { t3 = t2; t2 = t1; t1 = p; } else if (p > t2) { t3 = t2; t2 = p; } else if (p > t3) t3 = p;
 	}
-	const blend = ([a, b, c]) => ANSWER_WEIGHTS[0] * a + ANSWER_WEIGHTS[1] * b + ANSWER_WEIGHTS[2] * c;
+	/** The K best answers to threat t (K = Pokémon brought), at most one of them a Mega; best first. */
+	const topAnswers = (members, t) => { rankAnswers(members, t); return [t0, t1, t2, t3].slice(0, K); };
+	const blend = answers => answers.reduce((s, p, k) => s + AW[k] * p, 0);
 
 	/** Higher is better. Members are indices into `entries`. */
 	function score(members) {
 		let cover = 0;
-		for (let t = 0; t < N; t++) cover += W[t] * blend(topAnswers(members, t));
+		const L = members.length;
+		for (let t = 0; t < N; t++) {
+			// same as answerBlend(members, t), inlined with locals: this loop is the team search's hot path
+			let a0 = 0, a1 = 0, a2 = 0, a3 = 0, mega = 0;
+			for (let x = 0; x < L; x++) {
+				const m = members[x], p = M[m * N + t];
+				if (isMega[m]) { if (p > mega) mega = p; continue; }
+				if (p > a0) { a3 = a2; a2 = a1; a1 = a0; a0 = p; } else if (p > a1) { a3 = a2; a2 = a1; a1 = p; } else if (p > a2) { a3 = a2; a2 = p; } else if (p > a3) a3 = p;
+			}
+			const p = mega;
+			if (p > a0) { a3 = a2; a2 = a1; a1 = a0; a0 = p; } else if (p > a1) { a3 = a2; a2 = a1; a1 = p; } else if (p > a2) { a3 = a2; a2 = p; } else if (p > a3) a3 = p;
+			cover += W[t] * (w0 * a0 + w1 * a1 + w2 * a2 + w3 * a3);
+		}
 		let s = 0;
 		for (const m of members) s += strength[m];
 		return cover + RATING_WEIGHT * s / 6;
