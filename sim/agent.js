@@ -259,7 +259,7 @@ function moveValue(battle, me, foe, moveId, ctx) {
 		if (move.selfSwitch && ctx.threatFrac > 0.6 && ctx.benchCount > 0) v += 0.15;
 		if (move.priority > 0 && !ctx.iAmFaster && ctx.threatFrac >= 1) v += 0.2;
 		// v2: Fake Out's flinch takes away the foe's turn (worth more the harder it hits me)
-		if (ctx.v2 && move.id === 'fakeout' && dmg > 0 && !V2_OFF.has('fakeout') &&
+		if (ctx.v2 && move.id === 'fakeout' && dmg > 0 && !off(ctx, 'fakeout') &&
 			!foe.hasAbility(['innerfocus', 'shielddust']) && foe.item !== 'covertcloak' && dmg < foe.hp) {
 			v += Math.min(0.5, 0.15 + 0.35 * Math.min(1, ctx.threatFrac));
 		}
@@ -376,8 +376,12 @@ const V2_OFF = new Set((process.env.V2_OFF || '').split(',').filter(Boolean));
 const groupOf = move => PROTECT.has(move.id) ? 'protect' : SETUP[move.id] ? 'setup' : RECOVERY.has(move.id) ? 'recovery'
 	: PHAZE.has(move.id) ? 'phaze' : move.id;
 
+// a rule group switched off for one agent (battle.js 'heuristic2!group', for ablations) or globally (V2_OFF)
+const off = (ctx, group) => V2_OFF.has(group) || !!(ctx.off && ctx.off.has(group));
+
 function tacticalValue(battle, me, foe, move, ctx) {
 	if (V2_OFF.size && V2_OFF.has(groupOf(move))) return undefined;
+	if (ctx.off && ctx.off.has(groupOf(move))) return undefined;
 	const hpFrac = me.hp / me.maxhp;
 	const subbed = !!me.volatiles['substitute'];
 	// foe's best hit as a fraction of my current HP; nothing gets through a Substitute that holds
@@ -441,6 +445,11 @@ function tacticalValue(battle, me, foe, move, ctx) {
 	}
 	if (SETUP[move.id]) {
 		const boosts = SETUP[move.id];
+		// an Unaware foe ignores my boosts (all but Speed): setting up into it wastes the turn
+		if (!off(ctx, 'unaware') && foe.hasAbility('unaware') && !me.hasAbility(['moldbreaker', 'teravolt', 'turboblaze'])) {
+			if (!boosts.spe) return 0;
+			if (ctx.iAmFaster) return 0;
+		}
 		if (move.id === 'bellydrum') return me.boosts.atk < 2 && hpFrac > 0.6 && threat < 0.4 ? 0.7 : 0;
 		const maxed = Object.entries(boosts).every(([k, n]) => me.boosts[k] + n > 6 || (k !== 'spe' && me.boosts[k] >= 4));
 		if (maxed) return 0;
@@ -499,6 +508,7 @@ function chooseMove(battle, side, opts = {}) {
 		threatFrac: threat.frac,
 		benchCount: bench.length,
 		v2: !!opts.v2,
+		off: opts.off || null,
 	};
 	let best = null, bestV = -1;
 	active.moves.forEach((m, i) => {

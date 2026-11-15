@@ -90,7 +90,7 @@ function drawSets(rng, k, species, items) {
 }
 
 function contexts(subject, n, items) {
-	const rng = mulberry32(hash(subject.id) + 11 + (FIELD === 'sim' ? 0 : 1000));
+	const rng = mulberry32(hash(subject.id) + 11 + (FIELD === 'sim' ? 0 : 1000) + 7919 * Number(arg('salt', 0)));
 	return Array.from({length: n}, () => {
 		// partners may not share an item with any variant, so every variant keeps Item Clause
 		const partners = drawSets(rng, 2, new Set([subject.species]), new Set(items));

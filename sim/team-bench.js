@@ -34,6 +34,8 @@ const AGENT = arg('agent', 'heuristic2');
 const GAMES = Number(arg('games', 2));
 const MIN_RATING = Number(arg('min-rating', 1250));
 const OUT = path.resolve(arg('out', `out/team-bench/${AGENT}.json`));
+// --no-rr skips the real teams' own round robin (their percentiles), which is most of the battles
+const NO_RR = argv.includes('--no-rr');
 const entries = RESULTS.entries;
 const ladder = loadLadder(path.resolve(arg('stats')), entries);
 const ladderBy = new Map(ladder.list.filter(x => !x.problems).map(x => [toID(x.name), x]));
@@ -140,6 +142,7 @@ async function main() {
 	for (let i = 0; i < teams.length; i++) {
 		for (let j = ours.length; j < teams.length; j++) {
 			if (i === j || (i >= ours.length && j < i)) continue; // real pairs once
+			if (NO_RR && i >= ours.length) continue; // --no-rr: only our teams against the real ones
 			for (let g = 0; g < GAMES; g++) {
 				const flip = g % 2 === 1;
 				jobs.push({a: flip ? teams[j].team : teams[i].team, b: flip ? teams[i].team : teams[j].team,
@@ -161,17 +164,18 @@ async function main() {
 	});
 	const rate = s => s.w / (s.g || 1);
 	const realRates = real.map((t, k) => rate(score[ours.length + k])).sort((a, b) => a - b);
-	const pct = x => realRates.filter(r => r < x).length / realRates.length;
+	const pct = x => NO_RR ? null : realRates.filter(r => r < x).length / realRates.length;
 	const report = {agent: AGENT, games: GAMES, results: RESULTS.meta.generatedAt, realTeams: real.length, minRating: MIN_RATING,
 		ours: ours.map((t, k) => ({label: t.label, team: t.team, winRate: +rate(score[k]).toFixed(4), games: score[k].g,
-			se: +Math.sqrt(rate(score[k]) * (1 - rate(score[k])) / (score[k].g || 1)).toFixed(4), percentile: +pct(rate(score[k])).toFixed(3)})),
+			se: +Math.sqrt(rate(score[k]) * (1 - rate(score[k])) / (score[k].g || 1)).toFixed(4), percentile: pct(rate(score[k]))})),
 		real: real.map((t, k) => ({label: t.label, species: t.team.map(s => s.species), winRate: +rate(score[ours.length + k]).toFixed(4), games: score[ours.length + k].g})),
-		realQuantiles: [0.1, 0.25, 0.5, 0.75, 0.9].map(q => +realRates[Math.floor(q * (realRates.length - 1))].toFixed(3)),
+		realQuantiles: NO_RR ? null : [0.1, 0.25, 0.5, 0.75, 0.9].map(q => +realRates[Math.floor(q * (realRates.length - 1))].toFixed(3)),
 		failed: pool.failed || 0};
 	fs.mkdirSync(path.dirname(OUT), {recursive: true});
 	fs.writeFileSync(OUT, JSON.stringify(report, null, 1));
-	for (const o of report.ours) console.log(`${o.label}: ${(100 * o.winRate).toFixed(1)}% ± ${(100 * o.se).toFixed(1)} vs real teams (${o.games} games), percentile ${(100 * o.percentile).toFixed(0)} among real teams`);
-	console.log(`real teams' win rate quantiles (10/25/50/75/90%): ${report.realQuantiles.map(x => (100 * x).toFixed(1)).join(' / ')}`);
+	for (const o of report.ours) console.log(`${o.label}: ${(100 * o.winRate).toFixed(1)}% ± ${(100 * o.se).toFixed(1)} vs real teams (${o.games} games)` +
+		(o.percentile === null ? '' : `, percentile ${(100 * o.percentile).toFixed(0)} among real teams`));
+	if (report.realQuantiles) console.log(`real teams' win rate quantiles (10/25/50/75/90%): ${report.realQuantiles.map(x => (100 * x).toFixed(1)).join(' / ')}`);
 	console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s; failed ${pool.failed || 0}`);
 	pool.close();
 }

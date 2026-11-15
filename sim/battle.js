@@ -19,6 +19,7 @@ const AGENTS = {
 	rollout4all: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true, myMoves: 4, theirMoves: 3}),
 	// deeper and wider: 8 heuristic turns after each option and 2 switch options (setup and stall wars pay off late)
 	rollout8all: (b, s) => decideLookahead(b, s, {rollout: 8, v2: true, myMoves: 4, theirMoves: 3, mySwitches: 2}),
+	rollout16all: (b, s) => decideLookahead(b, s, {rollout: 16, v2: true, myMoves: 4, theirMoves: 4, mySwitches: 2}),
 	// doubles (FORMAT=gen9championsvgc2026regmc; sim/dagent.js)
 	dheuristic: (b, s) => require('./dagent').decideDoubles(b, s),
 	dgreedy: (b, s) => require('./dagent').decideGreedy(b, s),
@@ -29,6 +30,17 @@ for (const [D, K] of [[2, 2], [4, 4], [8, 8]]) {
 	let agent = null, full = null;
 	AGENTS[`mc${D}x${K}`] = (b, s) => (agent ||= require('./engine').engineAgent({D, K}))(b, s);
 	AGENTS[`mcfull${D}x${K}`] = (b, s) => (full ||= require('./engine').engineAgent({D, K, omniscient: true}))(b, s);
+}
+
+// 'heuristic2!unaware,fakeout' is heuristic2 with those rule groups switched off (sim/agent.js), for ablations
+function resolveAgent(name) {
+	if (AGENTS[name]) return AGENTS[name];
+	const m = /^heuristic2!(.+)$/.exec(String(name));
+	if (m) {
+		const off = new Set(m[1].split(','));
+		return AGENTS[name] = (b, s) => decide(b, s, {v2: true, off});
+	}
+	return decide;
 }
 
 const MAX_TURNS = 150;
@@ -69,7 +81,7 @@ const choiceErrors = {count: 0, samples: []};
 
 /** Play `battle` to the end (or the turn limit) with an agent on each side. */
 function playOut(battle, agents = ['heuristic', 'heuristic'], maxTurns = MAX_TURNS) {
-	const pilots = agents.map(a => AGENTS[a] || decide);
+	const pilots = agents.map(resolveAgent);
 	let guard = 0;
 	while (!battle.ended && battle.turn <= maxTurns && guard++ < 2000) {
 		progress();
@@ -97,4 +109,4 @@ function playOut(battle, agents = ['heuristic', 'heuristic'], maxTurns = MAX_TUR
 	return battle;
 }
 
-module.exports = {runBattle, playOut, setProgressHook, AGENTS, MAX_TURNS, choiceErrors};
+module.exports = {runBattle, playOut, setProgressHook, AGENTS, resolveAgent, MAX_TURNS, choiceErrors};
