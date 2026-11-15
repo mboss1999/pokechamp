@@ -4,6 +4,7 @@
 // results.json with them swapped in (so sim/audit-moves.js --results can re-audit them).
 //
 //   node sim/setsearch-run.js --ids dragapult,toxicroak --pool lambda --scale 4 --check rollout4all
+//   --ladder-stats chaos.json also tries every move the ladder uses on each entry
 
 const fs = require('fs');
 const path = require('path');
@@ -64,7 +65,14 @@ async function main() {
 		await pool.check();
 	} else pool = new (require('./pool').Pool)();
 	const t0 = Date.now();
+	let extraMoves = null;
+	if (arg('ladder-stats', '')) {
+		// every move the ladder uses on the entry (>= 10%) joins the search's move pool (sim/ladderstats.js)
+		const {loadLadder, ladderMoves} = require('./ladderstats');
+		extraMoves = ladderMoves(loadLadder(path.resolve(arg('ladder-stats')), entries), 0.1);
+	}
 	const search = new SetSearch({
+		extraMoves,
 		pool, context: metaContext, agent: arg('agent', 'heuristic2'), checkAgent: arg('check', null),
 		scale: Number(arg('scale', 1)), rounds: Number(arg('rounds', 3)),
 		log: m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`),

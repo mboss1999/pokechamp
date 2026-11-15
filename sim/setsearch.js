@@ -44,8 +44,17 @@ const ITEMS = ['Life Orb', 'Choice Scarf', 'Focus Sash', 'Leftovers', 'Sitrus Be
 const sameRole = (a, b) => a.category !== 'Status' && b.category !== 'Status' && a.type === b.type &&
 	a.category === b.category && a.priority === b.priority && !!a.selfSwitch === !!b.selfSwitch;
 
-/** Moves worth trying on this entry: every status move the pilot understands, and the strongest attacks per type. */
-function movePool(entry) {
+// Attacks whose power the generic estimate (sets.js attackPower) misjudges: they always crit (Flower Trick), roll
+// accuracy per hit with growing power (Triple Axel), or change type / power / accuracy in their own handlers (Weather
+// Ball, Terrain Pulse, Blizzard in snow, Expanding Force). They get a race of their own rather than competing on base
+// power for a top-2 place in their type (the 2026-11-15 ladder benchmark found Flower Trick and Weather Ball missing).
+const special = m => !!(m.willCrit || m.multiaccuracy || m.onModifyType || m.onModifyMove || m.onBasePower);
+
+/**
+ * Moves worth trying on this entry: every status move the pilot understands, the strongest attacks per type, and
+ * `extra` move ids (e.g. what the ladder uses on it, sim/ladderstats.js) that the Pokémon can learn.
+ */
+function movePool(entry, extra = []) {
 	const species = dex.species.get(entry.species);
 	const battleSpecies = dex.species.get(entry.battleSpecies);
 	const b = battleSpecies.baseStats;
@@ -76,8 +85,11 @@ function movePool(entry) {
 		list.slice(0, list[0].category === weakCat ? 1 : 2).forEach(m => out.set(m.id, m));
 	}
 	for (const m of attacks) {
-		if (m.priority > 0 || m.selfSwitch || curated.has(m.id) || S.SPECIAL_POWER[m.id] || (DOUBLES && SPREAD.has(m.target))) out.set(m.id, m);
+		if (m.priority > 0 || m.selfSwitch || curated.has(m.id) || S.SPECIAL_POWER[m.id] || special(m) ||
+			(DOUBLES && SPREAD.has(m.target))) out.set(m.id, m);
 	}
+	const learnIds = new Map(learn.map(m => [m.id, m]));
+	for (const id of extra) if (learnIds.has(id) && !out.has(id)) out.set(id, learnIds.get(id));
 	return [...out.values()];
 }
 
@@ -144,9 +156,10 @@ class SetSearch {
 	 * @param {string} o.agent      pilot for the races (default heuristic2)
 	 * @param {string} [o.checkAgent] stronger pilot for the final check (e.g. rollout4all); none if unset
 	 * @param {number} o.scale      multiplies every sample size
+	 * @param {Map} [o.extraMoves] entry id -> move ids the search must also try (ladder usage)
 	 */
-	constructor({pool, context, agent = 'heuristic2', checkAgent = null, scale = 1, rounds = 3, log = () => {}}) {
-		Object.assign(this, {pool, context, agent, checkAgent, rounds, log});
+	constructor({pool, context, agent = 'heuristic2', checkAgent = null, scale = 1, rounds = 3, log = () => {}, extraMoves = null}) {
+		Object.assign(this, {pool, context, agent, checkAgent, rounds, log, extraMoves});
 		const n = x => Math.max(8, Math.round(x * scale));
 		this.size = {screen: n(40), keep: 4, refine: n(160), confirm: n(500), check: n(250), statusRefine: n(100)};
 		this.battles = 0;
@@ -204,7 +217,7 @@ class SetSearch {
 	/** Coordinate descent from `start`. Returns {best, wr, alts, history, check}. */
 	async search(entry, start, salt = 0) {
 		const rng = mulberry32(hash(entry.id) + 104729 * salt);
-		const pool = movePool(entry);
+		const pool = movePool(entry, (this.extraMoves && this.extraMoves.get(entry.id)) || []);
 		let cur = {...start, moves: start.moves.slice(), key: setKey(start)};
 		const history = [];
 		const strong = this.checkAgent;

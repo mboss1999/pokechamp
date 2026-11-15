@@ -110,6 +110,28 @@ function estDamage(battle, src, tgt, moveId) {
 	return dmg;
 }
 
+// move handlers that change the user's state when run (everything else is a pure function of the position)
+const STATEFUL_MODIFY = new Set(['rollout', 'iceball', 'present', 'struggle', 'beatup']);
+
+/** Probability that `move` hits, as in BattleActions.hitStepAccuracy (No Guard, accuracy items and abilities,
+ * accuracy / evasion stages), without the random roll. */
+function hitChance(battle, src, tgt, move) {
+	let accuracy = move.accuracy;
+	if (accuracy === true || move.alwaysHit) return 1;
+	accuracy = battle.runEvent('ModifyAccuracy', tgt, src, move, accuracy);
+	if (accuracy === true) return 1;
+	if (typeof accuracy !== 'number') return 1;
+	let boost = 0;
+	if (!move.ignoreAccuracy) boost = battle.clampIntRange(battle.runEvent('ModifyBoost', src, null, null, {...src.boosts}).accuracy, -6, 6);
+	if (!move.ignoreEvasion) boost = battle.clampIntRange(boost - battle.runEvent('ModifyBoost', tgt, null, null, {...tgt.boosts}).evasion, -6, 6);
+	if (boost > 0) accuracy = accuracy * (3 + boost) / 3;
+	else if (boost < 0) accuracy = accuracy * 3 / (3 - boost);
+	// No Guard and the like return true here
+	accuracy = battle.runEvent('Accuracy', tgt, src, move, accuracy);
+	if (accuracy === true) return 1;
+	return Math.max(0, Math.min(100, Number(accuracy) || 0)) / 100;
+}
+
 function computeDamage(battle, src, tgt, moveId) {
 	const move = battle.dex.getActiveMove(moveId);
 	if (move.category === 'Status') return 0;
@@ -125,19 +147,45 @@ function computeDamage(battle, src, tgt, moveId) {
 	battle.activeMove = move; battle.activePokemon = src; battle.activeTarget = tgt;
 	let dmg = 0;
 	try {
-		move.willCrit = false;
+		// moves that always crit (Flower Trick, Wicked Blow, Surging Strikes...) keep it; others are estimated
+		// without crits
+		if (move.willCrit !== true) move.willCrit = false;
+		// the move's own handlers run first, as in BattleActions.useMoveInner: Weather Ball and Terrain Pulse
+		// change type and power, Blizzard / Hurricane / Thunder can't miss in their weather. Without them Weather
+		// Ball in sun was estimated as a 50-power Normal move (2026-11-15 ladder benchmark).
+		if (!STATEFUL_MODIFY.has(move.id)) {
+			battle.singleEvent('ModifyType', move, null, src, tgt, move, move);
+			battle.singleEvent('ModifyMove', move, null, src, tgt, move, move);
+		}
 		battle.runEvent('ModifyType', src, tgt, move, move);
 		const absorbers = ABSORB[move.type];
 		if (absorbers && absorbers.includes(tgt.ability) && !tgt.ignoringAbility()) return 0;
-		const per = battle.actions.getDamage(src, tgt, move, true);
-		dmg = typeof per === 'number' ? per : 0;
-		if (move.multihit) {
-			const hits = Array.isArray(move.multihit)
-				? (src.hasAbility('skilllink') ? move.multihit[1] : (move.multihit[1] === 5 ? 3.1 : 2.5))
-				: move.multihit;
-			dmg *= hits;
+		const acc = hitChance(battle, src, tgt, move);
+		if (move.multiaccuracy && typeof move.multihit === 'number') {
+			// Triple Axel / Triple Kick / Population Bomb: power grows per hit and each hit rolls accuracy
+			const skill = src.hasAbility('skilllink');
+			let reach = 1;
+			for (let h = 1; h <= move.multihit; h++) {
+				move.hit = h;
+				reach *= skill ? 1 : acc;
+				const per = battle.actions.getDamage(src, tgt, move, true);
+				dmg += reach * (typeof per === 'number' && per > 0 ? per : 0);
+			}
+		} else {
+			move.hit = 1;
+			const per = battle.actions.getDamage(src, tgt, move, true);
+			dmg = typeof per === 'number' && per > 0 ? per : 0;
+			if (move.multihit) {
+				const hits = Array.isArray(move.multihit)
+					? (src.hasAbility('skilllink') ? move.multihit[1] : (move.multihit[1] === 5 ? 3.1 : 2.5))
+					: move.multihit;
+				dmg *= hits;
+			}
+			dmg *= acc;
 		}
-		if (move.accuracy !== true) dmg *= Math.min(100, move.accuracy) / 100;
+		// Protean / Libero: the user becomes the move's type before it hits, once per switch-in
+		if (src.hasAbility(['protean', 'libero']) && !src.abilityState[src.ability] && move.type !== '???' &&
+			!src.hasType(move.type) && !src.ignoringAbility()) dmg *= 1.5;
 	} catch (e) {
 		dmg = 0;
 	} finally {
@@ -210,6 +258,11 @@ function moveValue(battle, me, foe, moveId, ctx) {
 		if (move.id === 'focuspunch' && !me.volatiles['substitute']) v *= 0.2;
 		if (move.selfSwitch && ctx.threatFrac > 0.6 && ctx.benchCount > 0) v += 0.15;
 		if (move.priority > 0 && !ctx.iAmFaster && ctx.threatFrac >= 1) v += 0.2;
+		// v2: Fake Out's flinch takes away the foe's turn (worth more the harder it hits me)
+		if (ctx.v2 && move.id === 'fakeout' && dmg > 0 && !V2_OFF.has('fakeout') &&
+			!foe.hasAbility(['innerfocus', 'shielddust']) && foe.item !== 'covertcloak' && dmg < foe.hp) {
+			v += Math.min(0.5, 0.15 + 0.35 * Math.min(1, ctx.threatFrac));
+		}
 		return v;
 	}
 	if (ctx.v2) {
@@ -339,8 +392,22 @@ function tacticalValue(battle, me, foe, move, ctx) {
 		if (net > 0.04) v = Math.max(v, Math.min(0.55, 0.15 + 3 * net));
 		// block a first-turn Fake Out / First Impression
 		if (foe.activeMoveActions === 0 && foe.moveSlots.some(m => m.id === 'fakeout' || m.id === 'firstimpression')) v = Math.max(v, 0.3);
+		// wait for my pending Wish to land
+		const wish = me.side.slotConditions[me.position] && me.side.slotConditions[me.position]['wish'];
+		if (wish && hpFrac < 0.6 && ctx.threatFrac >= 0.3) v = Math.max(v, 0.55);
 		// stall out the last turn of the foe's screens / Trick Room / Tailwind is too fine for this pilot
 		return v;
+	}
+	if (move.id === 'wish') {
+		// heals half my max HP at the end of next turn (to whoever is in this slot then)
+		if (me.side.slotConditions[me.position] && me.side.slotConditions[me.position]['wish']) return 0;
+		const heal = Math.min(0.5, 1 - hpFrac);
+		if (heal < 0.2) return ctx.benchCount > 0 && hpFrac > 0.8 ? 0.08 : 0;
+		// it lands a turn late: worth it when I survive the foe's next two hits, or with Protect to cover it
+		const incoming = ctx.threatFrac * hpFrac;
+		const canProtect = me.moveSlots.some(m => PROTECT.has(m.id));
+		if (incoming * 2 < hpFrac + heal || (canProtect && incoming < hpFrac)) return Math.min(0.75, 0.2 + heal + (hpFrac < 0.5 ? 0.1 : 0));
+		return 0.05;
 	}
 	if (move.id === 'substitute') {
 		if (subbed || me.hp <= me.maxhp / 4 || hpFrac < 0.5) return 0;
@@ -475,7 +542,7 @@ const decideV2 = (battle, side) => decide(battle, side, {v2: true});
 
 // Status moves the pilot has a rule for (anything else scores a flat 0.05 and is effectively never used, so the
 // set search doesn't spend battles on it).
-const RULED = new Set(['willowisp', 'thunderwave', 'glare', 'stunspore', 'toxic', 'poisonpowder', 'leechseed', 'substitute',
+const RULED = new Set(['wish', 'willowisp', 'thunderwave', 'glare', 'stunspore', 'toxic', 'poisonpowder', 'leechseed', 'substitute',
 	'taunt', 'encore', 'disable', 'trick', 'switcheroo', 'trickroom', 'painsplit', 'destinybond', 'defog', 'partingshot',
 	'sunnyday', 'raindance', 'sandstorm', 'snowscape']);
 const knownStatus = id => !!(SETUP[id] || RECOVERY.has(id) || SLEEP.has(id) || HAZARDS[id] || SCREENS[id] || PHAZE.has(id) ||

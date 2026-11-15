@@ -59,6 +59,10 @@ const PARTS = Number(arg('parts', 0));
 // Starting sets from an earlier run's results.json: they seed the population (so partners and opponents are
 // realistic from the start) and join the archetype candidates in the first pass.
 const INIT_SETS = arg('init-sets', '');
+// Showdown ladder usage stats (chaos JSON, sim/ladderstats.js): every move the ladder uses on an entry (>= 10%) joins
+// the set search's move pool, and the ladder's modal set joins the first pass's candidates. Only widens what the
+// search tries; the simulation still decides.
+const LADDER_STATS = arg('ladder-stats', '');
 const WEB_OUT = path.resolve(arg('web', path.join(__dirname, '..', 'web', 'data', DOUBLES ? 'doubles-results.json' : 'results.json')));
 fs.mkdirSync(OUT, {recursive: true});
 
@@ -185,6 +189,25 @@ async function stageSets(pool) {
 		}
 		log(`sets: ${init.size} starting sets from ${INIT_SETS}`);
 	}
+	let extraMoves = null;
+	if (LADDER_STATS) {
+		const {loadLadder, ladderMoves} = require('./ladderstats');
+		const {setKey} = require('./util');
+		const ladder = loadLadder(path.resolve(LADDER_STATS), entries, {abilityOf: e => {
+			const c = cands.get(e.id)[0];
+			return c ? c.ability : Object.values(F.dex.species.get(e.species).abilities)[0];
+		}});
+		extraMoves = ladderMoves(ladder, 0.1);
+		let seeded = 0;
+		for (const x of ladder.list) {
+			if (x.problems || !cands.has(x.entry.id)) continue;
+			const set = {...x.set, spread: 'custom', archetype: 'ladder'};
+			set.key = setKey(set);
+			cands.get(x.entry.id).push(set);
+			seeded++;
+		}
+		log(`sets: ladder stats ${LADDER_STATS}: ${seeded} modal sets seeded, extra moves for ${extraMoves.size} entries`);
+	}
 	const pop = new Map(entries.map(e => [e.id, state[e.id]?.best || init.get(e.id)?.best || cands.get(e.id)[0]]));
 	const popSets = id => [pop.get(id)];
 
@@ -268,7 +291,7 @@ async function stageSets(pool) {
 	const {SetSearch} = require('./setsearch');
 	const descent = new SetSearch({
 		pool, context, agent: SETS_AGENTS[0], checkAgent: SETS_CHECK === 'none' ? null : SETS_CHECK, scale: SCALE,
-		rounds: Number(arg('rounds', 3)), log: m => log('  ' + m),
+		rounds: Number(arg('rounds', 3)), log: m => log('  ' + m), extraMoves,
 	});
 
 	// progress = {pass, done: ids finished in that pass}; lets a restarted run skip finished work
@@ -290,7 +313,12 @@ async function stageSets(pool) {
 			else if (init.has(entry.id)) pool0 = [init.get(entry.id).best, ...init.get(entry.id).alts, ...pool0];
 			// dedupe by key
 			pool0 = pool0.filter((s, i, arr) => arr.findIndex(t => t.key === s.key) === i);
-			let ranked = await halving(entry, pool0, [n(12), n(24), n(48)], rng, stats);
+			// A later pass starts the descent from the incumbent: re-racing it against its item alternatives in a small
+			// halving (~340 battles, no paired confirmation, no strong-pilot check) used to swap the item on noise
+			// (44 of 344 sets in the 2026-11-15 run, mostly to Quick Claw / Bright Powder). The descent's item sweep
+			// still tries every item, with the paired confirm.
+			let ranked = SEARCH === 'descent' && pass > 1 && state[entry.id] ? [state[entry.id].best]
+				: await halving(entry, pool0, [n(12), n(24), n(48)], rng, stats);
 			if (SEARCH === 'descent') {
 				// coordinate descent from the archetype screen's winner
 				const r = await descent.search(entry, ranked[0], pass);

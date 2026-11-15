@@ -133,7 +133,7 @@ toward 50% according to how many battles back them. It also adds a small bonus f
 
 - **heuristic** (`sim/agent.js`, the default): fast, about 350 battles/s on a 10-core Mac. Details below.
 - **heuristic2**: the same pilot with rules for what Protect, Substitute, Taunt, Encore, Disable, setup, recovery,
-  Will-O-Wisp and phazing achieve in the current position (v1 gave Protect a flat 0.02 and Taunt/Encore 0.15, so it
+  Will-O-Wisp, phazing, Wish and Fake Out's flinch achieve in the current position (v1 gave Protect a flat 0.02 and Taunt/Encore 0.15, so it
   almost never used them). On teams of Showdown's hand-built Champions random-battle sets, which carry many status
   moves, it beats heuristic 51.5% ± 0.7 over 3,000 mirrored games (`node sim/compare.js --a heuristic2 --b heuristic
   --teams curated`); no rule group made it worse when switched off (`V2_OFF=protect,...`). The sets stage uses it.
@@ -236,6 +236,68 @@ were never used by the pilot (removing the move changed no battle, e.g. Dragapul
 Darts), 18 had a single-move change worth over 2 points (up to +7), and the heuristic pilot almost never clicks
 Protect, Substitute, Taunt or Encore, so the search can't value them. The rollout AI only considers the
 heuristic's top three moves, so it shares that blind spot.
+
+### Ladder benchmark
+
+Do the simulation's choices hold up against what strong human players use? Two tools compare against Showdown's own
+data for the format:
+
+- `sim/ladder-bench.js` reads the ladder usage statistics (`https://www.smogon.com/stats/<month>/chaos/gen9championsbssregmc-1760.json`,
+  parsed by `sim/ladderstats.js`), builds each popular Pokémon's modal ladder set (4 most used moves, most used item,
+  most used spread) and races it against our set on identical battles, in our simulated field (`--field sim`) or a
+  field drawn by ladder usage with ladder sets (`--field ladder`), with any pilot. `ladderMoves` (our item and spread
+  with the ladder's moves) separates moves from items; `--compare other/results.json` adds a third set (e.g. from
+  `sim/setsearch-run.js`). A ladder set that beats ours under our own pilot means the search missed it; ours beating
+  the ladder's is a finding only if the pilot can play the ladder set's idea (the report flags status moves the pilot
+  has no rule for).
+- `sim/team-bench.js` takes real teams from public replays of top-100 ladder players (team preview gives the six
+  species; Mega Evolution, moves and items come from the replay where revealed, the rest from the ladder's modal
+  set) and plays the Team Builder's five teams and every real team in a round robin against the real teams, same pilot
+  on both sides. A real team scores ~50% against its own field by symmetry, so the builder's score says how its teams
+  compare with a typical strong ladder team.
+
+  ```bash
+  node sim/ladder-bench.js --stats chaos.json --top 45 --field ladder --agent rollout4all --n 800 --pool lambda
+  node sim/team-bench.js --replays out/team-bench/replays --stats chaos.json --agent rollout4all --games 2 --pool lambda
+  ```
+
+First run (2026-11-15, October 2026 stats at the 1760 cutoff, 87,848 battles; 248 real teams from 503 replays of
+top-100 players, Elo 1250+; results in `out/ladder-bench/` and `out/team-bench/`):
+
+- **Teams.** Judged by rollout4all on both sides, the Team Builder's five teams score 51–66% against the real teams
+  (66.5, 61.9, 51.2, 58.3, 59.5% ± 2.2; the real teams' own median is 50.6%, 90th percentile 59.9%), so its best team
+  sits at the 98th percentile of strong ladder teams. Its teams look nothing like the ladder's (Annihilape, Hydreigon,
+  Conkeldurr, Indeedee, Clefable: 0.1–10% usage), and the rating order correlates only 0.37 (Spearman, top 60) with
+  ladder usage. Bulky setup sets (Bulk Up Rage Fist, Unaware Cosmic Power Clefable) are what an AI-piloted field
+  struggles with; humans answer them with Taunt / Encore / Haze, so treat their ratings as an upper bound.
+- **Bugs found and fixed** (none of these were simulation findings):
+  - the pilot's damage estimate (`sim/agent.js` computeDamage) never ran a move's own type / power / accuracy handlers
+    and forced every move not to crit: Weather Ball in sun was estimated at 22% of its real damage, Triple Axel at 0,
+    Flower Trick at 67% (lost its guaranteed crit), Blizzard in snow and Hurricane in rain at ~67%, Zap Cannon with
+    No Guard at 50%, Protean / Libero coverage moves at ~64% (no type-change STAB). Estimates now match the engine
+    within a few percent for all of them (accuracy now follows the engine's accuracy events and stages).
+  - in the sets stage's second pass, a small halving race (~340 battles, no paired confirmation, no strong-pilot
+    check) could replace the incumbent: 44 of 344 final sets got their item that way, mostly Quick Claw (9) and Bright
+    Powder (10), which the ladder never uses. Later passes now start the descent from the incumbent.
+  - the search's move pool kept the two strongest attacks per type by base power, which left out Flower Trick,
+    Weather Ball and Triple Axel. Attacks with their own power / type / accuracy logic are now always tried, and
+    `--ladder-stats` adds every move the ladder uses (>= 10%) and seeds the ladder's modal set as a first-pass
+    candidate.
+  - heuristic2 had no rule for Wish (Umbreon 91% on the ladder) or for Fake Out's flinch; it has both now.
+- **Sets** (22 Pokémon, ladder field, rollout4all, 800 paired battles each, ± 2 pp): the ladder's set beat ours
+  clearly for 8 (Cinderace +6.9, Charizard-Mega-X +5.6, Floette-Mega +5.1, Clefable-Mega +4.9, Greninja +4.9 from
+  Protean, Ninetales-Alola +4.8, Raichu-Mega-Y +4.3, Metagross-Mega's moves +5.0), tied for 9, and lost clearly for 5
+  (Archaludon −8.4, Gholdengo −7.6, Grimmsnarl −7.1, Pelipper −5.8, Scizor −4.8). Re-searching those 22 with the fixed
+  pilot and pool (`sim/setsearch-run.js`, from the current sets) changed 9 and closed part of the gap (Ninetales
+  +5.1, Raichu +2.9, Charizard-X +2.9, Cinderace +2.6, Kingambit +2.4 over the old set); the rest need changes to
+  several dimensions at once (Clefable-Mega's Bold Moonlight Flamethrower set), which coordinate descent from our
+  set can't reach but the seeded ladder candidate can. Where ours wins, the ladder set leans on what this pilot plays
+  poorly or what depends on teammates: dual screens + Parting Shot (Grimmsnarl), Damp Rock rain (Pelipper),
+  U-turn pivoting (Scizor), so those are not clean findings either. The sets stage plays against our own simulated
+  meta, which differs from the ladder's; part of each gap is that field.
+
+The fixes change every battle, so the published results need a full re-run of the pipeline (with `--ladder-stats`)
+before they apply.
 
 ### Convergence benchmark
 
