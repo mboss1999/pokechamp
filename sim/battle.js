@@ -17,6 +17,8 @@ const AGENTS = {
 	heuristic2: (b, s) => decide(b, s, {v2: true}),
 	rollout4v2: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true}),
 	rollout4all: (b, s) => decideLookahead(b, s, {rollout: 4, v2: true, myMoves: 4, theirMoves: 3}),
+	// deeper and wider: 8 heuristic turns after each option and 2 switch options (setup and stall wars pay off late)
+	rollout8all: (b, s) => decideLookahead(b, s, {rollout: 8, v2: true, myMoves: 4, theirMoves: 3, mySwitches: 2}),
 	// doubles (FORMAT=gen9championsvgc2026regmc; sim/dagent.js)
 	dheuristic: (b, s) => require('./dagent').decideDoubles(b, s),
 	dgreedy: (b, s) => require('./dagent').decideGreedy(b, s),
