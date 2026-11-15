@@ -299,6 +299,26 @@ top-100 players, Elo 1250+; results in `out/ladder-bench/` and `out/team-bench/`
 The fixes change every battle, so the published results need a full re-run of the pipeline (with `--ladder-stats`)
 before they apply.
 
+**Pilot convergence** (2026-11-15, `out/convergence/`, fixed pilot): is the battle AI strong enough that a stronger
+one would not change the tool's decisions?
+
+- Strength keeps rising with look-ahead: rollout8all beats rollout4all 51.9% ± 1.5, rollout16all beats rollout8all
+  51.8% ± 1.2 (3,000 mirrored games each). `sim/exploit-test.js` found that stronger opponents do not punish the
+  sim's favourite bulky setup Pokémon (Clefable, Annihilape, Azumarill, Conkeldurr, Umbreon, Corviknight,
+  Scizor-Mega) more than popular attackers: −13.4 vs −14.2 pp (rollout4all opponents) and −17.8 vs −18.2 pp
+  (rollout8all), against a heuristic2-piloted subject.
+- Decisions do not change. Set choice (22 Pokémon × 4 candidate sets, 800 paired battles each, ladder field), judged by
+  an independent rollout16all run: rollout4all's picks lose 0.85 ± 0.32 pp, rollout8all's 0.83 ± 0.34, rollout16all's
+  own picks on other seeds 0.58 ± 0.26 (the noise floor). Team choice (the builder's 7 distinct top teams vs the 248
+  real teams, ~990 games each): rollout4all and rollout16all pick the same best team; rollout8all picks the runner-up,
+  which the two rollout16all runs score 68.1 and 66.2% against 68.5 and 69.0%, a gap inside the judges' own noise.
+  The builder's teams score higher against real teams as the pilot gets stronger (mean 60.6% with rollout4all, 63.7%
+  with rollout16all), so their edge is not an artifact of weak play.
+- So within this family of AIs (rules + rollouts), pilot strength past rollout4all is not what limits team building.
+  A blind spot shared by the whole family can't show up in these tests; only a differently built player (humans, or
+  an RL agent) can find one. The heuristic2 Unaware rule found this way (opponents set up into Unaware Clefable on 59
+  of 683 turns) is now fixed, though it moves overall results by only 50.1% ± 0.1.
+
 ### Convergence benchmark
 
 `sim/bench.js` checks whether more simulation would still change decisions. A level is good enough when its
