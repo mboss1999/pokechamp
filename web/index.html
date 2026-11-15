@@ -19,6 +19,7 @@
 		<nav class="tabs" role="tablist">
 			<button role="tab" data-tab="rankings" aria-selected="true">Rankings</button>
 			<button role="tab" data-tab="teams" aria-selected="false">Build teams <span class="count" id="owned-count">0</span></button>
+			<button role="tab" data-tab="strongest" aria-selected="false">Strongest teams</button>
 			<button role="tab" data-tab="draft" aria-selected="false">Draft practice</button>
 		</nav>
 	</header>
@@ -65,6 +66,15 @@
 				<button id="build" class="primary">Build best teams</button>
 			</div>
 			<div id="team-results"></div>
+		</section>
+
+		<section id="strongest" class="view" hidden>
+			<p class="hint">Teams from the whole roster (not just your collection), found by searching on full simulated 6v6 battles
+				played by the strong AI. <b>Against today's ladder</b>: the teams that win most against what Champions ranked players
+				bring now (in-game ranked data from <a href="https://championsbattledata.com/" target="_blank" rel="noopener">Pokemon Champions Battle Data</a>,
+				Showdown usage stats and real top-player teams). <b>Theoretically strongest</b>: an equilibrium mix of teams, the
+				strongest choice if every opponent also adapts; it doesn't depend on today's meta.</p>
+			<div id="strongest-results"></div>
 		</section>
 
 		<section id="draft" class="view" hidden>

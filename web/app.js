@@ -310,11 +310,64 @@ function build() {
 	}, 20);
 }
 
+// ---- strongest teams (web/data/strategies.json, from sim/strategies.js) ----
+let strategies;
+
+function strategyTeamHtml(t, title, score) {
+	const byId = new Map(results.entries.map(e => [e.id, e]));
+	const members = t.members.map(m => ({...m, entry: byId.get(m.entryId)})).filter(m => m.entry);
+	const exportText = members.map(m => showdownText(m.entry, m.set)).join('\n\n');
+	return `<section class="team">
+		<div class="team-head"><h2>${esc(title)}</h2><span class="score">${score}</span><div class="spacer"></div>
+			<button class="ghost" data-copy="${esc(exportText)}">Copy team (Showdown format)</button></div>
+		<div class="members">${members.map(m => `<div class="card member${m.changes && m.changes.length ? ' tuned' : ''}">
+			<div class="mon">${sprite(m.entry)}<div><span class="name">${esc(displayName(m.entry))}</span><br>${typeBadges(m.entry.types)}</div></div>
+			${setBox(m.entry, m.set, {copy: true})}
+			${m.changes && m.changes.length ? `<div class="changes"><b>Tuned against the ladder</b>${m.changes.map(c => `<div>${esc(c)}</div>`).join('')}</div>` : ''}
+			${m.bringRate !== undefined ? `<div class="usage">Brought ${pct(m.bringRate)} · Leads ${pct(m.leadRate)}</div>` : ''}
+		</div>`).join('')}</div>
+		${t.threats && t.threats.length ? `<div class="card cover-wrap"><h3>Ladder Pokémon it struggles with most (win rate when they're brought)</h3>
+			<div class="cover">${t.threats.map(th => { const e = byId.get(th.entryId); return e ? `<div class="cover-row">${sprite(e)}${esc(displayName(e))} ${pct(th.winRate)}</div>` : ''; }).join('')}</div></div>` : ''}
+	</section>`;
+}
+
+async function renderStrongest() {
+	const box = $('#strongest-results');
+	if (strategies === undefined) {
+		try {
+			const resp = await fetch('data/strategies.json');
+			strategies = resp.ok ? await resp.json() : null;
+		} catch { strategies = null; }
+	}
+	if (!strategies) {
+		box.innerHTML = `<div class="empty">No team-level results yet. They come from sim/team-search.js, sim/double-oracle.js and sim/strategies.js.</div>`;
+		return;
+	}
+	const pm = (x, se) => `${(100 * x).toFixed(1)}%${se ? ` ± ${(100 * se).toFixed(1)}` : ''}`;
+	let html = '';
+	if (strategies.ladder) {
+		html += `<h2 class="section">Best against today's ladder</h2><p class="hint">${esc(strategies.ladder.fieldInfo || '')}</p>`;
+		html += strategies.ladder.teams.map((t, i) => strategyTeamHtml(t, `Ladder team ${i + 1}`,
+			`Wins <b>${pm(t.winRate, t.se)}</b> against ladder teams (strong AI on both sides)`)).join('');
+	}
+	if (strategies.equilibrium) {
+		const eq = strategies.equilibrium;
+		html += `<h2 class="section">Theoretically strongest (equilibrium)</h2><p class="hint">${eq.converged
+			? `No team the search could find beats this mix by more than ${(100 * eq.eps).toFixed(0)} point${eq.eps === 0.01 ? '' : 's'} (${esc(eq.reason)}).`
+			: 'Not converged yet: a stronger team may still exist.'} Built from ${eq.population} teams. Play the teams in these proportions;
+			any single one can be exploited by an opponent who knows you'll bring it.</p>`;
+		html += eq.teams.map((t, i) => strategyTeamHtml(t, `Equilibrium team ${i + 1}`,
+			`Weight <b>${pm(t.weight)}</b> · ${pm(t.vsMix)} against the mix`)).join('');
+	}
+	box.innerHTML = html;
+}
+
 function selectTab(name) {
 	for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
 	for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== name;
 	if (name === 'teams' && !$('#team-results').innerHTML) renderTeams(null);
 	if (name === 'draft') trainer?.refresh();
+	if (name === 'strongest') renderStrongest();
 }
 
 function wire() {
@@ -399,6 +452,7 @@ async function main() {
 	if (DOUBLES) {
 		// team preview practice and team tuning run the singles simulator for now
 		document.querySelector('.tabs button[data-tab=draft]').hidden = true;
+		document.querySelector('.tabs button[data-tab=strongest]').hidden = true;
 		$('#rankings-hint').textContent = 'Tick the Pokémon you have. Ratings come from simulated bring-6-pick-4 doubles battles; ' +
 			'click a row for its sets and matchups.';
 	}
