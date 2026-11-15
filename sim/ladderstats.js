@@ -15,7 +15,8 @@ const share = (obj, total) => Object.entries(obj).map(([k, v]) => [k, v / total]
  * @param {string} statsPath chaos JSON
  * @param {object[]} entries results.json entries (or pipeline roster entries with id/species/mega/megaItem)
  * @param {object} [o] o.abilityOf(entry): base-form ability for a Mega (the stats list the Mega's own ability)
- * @returns {{info, list: object[]}} list sorted by usage: {name, entry, usage, set, problems?, moveShare, itemShare}
+ * @returns {{info, list: object[]}} list sorted by usage: {name, entry, usage, set, problems?, moveShare, itemShare,
+ *   spreadShare ('Nature:hp/atk/def/spa/spd/spe' -> share)}
  */
 function loadLadder(statsPath, entries, o = {}) {
 	const stats = JSON.parse(fs.readFileSync(statsPath, 'utf8'));
@@ -43,7 +44,8 @@ function loadLadder(statsPath, entries, o = {}) {
 		const set = {name: species.name, species: species.name, item, ability, nature, evs,
 			ivs: Object.fromEntries(STAT_KEYS.map(k => [k, 31])), moves, level: 50};
 		const problems = F.validateSet(JSON.parse(JSON.stringify(set)));
-		list.push({name, entry, usage: d.usage, set, problems: problems || null, moveShare, itemShare});
+		const spreadShare = Object.fromEntries(share(d.Spreads, total));
+		list.push({name, entry, usage: d.usage, set, problems: problems || null, moveShare, itemShare, spreadShare});
 	}
 	return {info: stats.info, list};
 }

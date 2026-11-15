@@ -195,8 +195,16 @@ async function refineTeam(pool, results, team, opts = {}) {
 	//   strong   a change that adds or removes a status move must also win here (strong pilot)
 	//   validate fresh sample comparing the original and final teams: what we report (strong pilot)
 	const rng = mulberry32(hash(members.map(m => m.e.id).join(',') + (opts.salt ? `#${opts.salt}` : '')));
+	// opts.opponents(rng) -> PokemonSet[6]: tune against that field (e.g. sim/field.js, the real ladder) instead of
+	// teams drawn from the simulated meta
+	const entryOf = new Map(results.entries.map((e, i) => [`${e.species}|${e.megaItem || ''}`, i]));
+	const fieldGauntlet = count => Array.from({length: count}, () => {
+		const sets = opts.opponents(rng);
+		return {sets, members: sets.map(st => entryOf.get(`${st.species}|${dex.items.get(st.item).megaStone ? st.item : ''}`) ??
+			entryOf.get(`${st.species}|`) ?? -1)};
+	});
 	const batch = (teams, perTeam) => {
-		const gauntlet = makeGauntlet(results, rng, Math.round(teams * scale));
+		const gauntlet = opts.opponents ? fieldGauntlet(Math.round(teams * scale)) : makeGauntlet(results, rng, Math.round(teams * scale));
 		return {gauntlet, seeds: seedsFor(rng, gauntlet, perTeam), size: Math.round(teams * scale) * perTeam};
 	};
 	// strong: the strong pilot's check of a status change; validate is played by the strong pilot too
@@ -363,7 +371,7 @@ async function refineTeam(pool, results, team, opts = {}) {
 		const opp = validate.gauntlet[g.oppIndex];
 		for (const k of g.oppPicks) {
 			const idx = opp.members[k];
-			if (idx === undefined) continue;
+			if (idx === undefined || idx < 0) continue;
 			const s = vs.get(idx) || {games: 0, wins: 0};
 			s.games++; s.wins += g.win;
 			vs.set(idx, s);
