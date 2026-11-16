@@ -32,9 +32,43 @@ for (const [D, K] of [[2, 2], [4, 4], [8, 8]]) {
 	AGENTS[`mcfull${D}x${K}`] = (b, s) => (full ||= require('./engine').engineAgent({D, K, omniscient: true}))(b, s);
 }
 
-// 'heuristic2!unaware,fakeout' is heuristic2 with those rule groups switched off (sim/agent.js), for ablations
+/**
+ * Randomized team preview: each of the 20 possible trios is picked with probability proportional to
+ * exp(score / temp), where a trio's score is the sum of its members' matchup scores against the six foes (the
+ * heuristic's own preview score); the lead is the trio's best-scoring member. Every pilot otherwise picks the same
+ * three against a given team, so a counter-team can be built against that one pick (2026-11-16: 12 of 28 team
+ * pairs ended 90-100% one way). Seeded from the battle's seed: reproducible, and the same in every rerun.
+ */
+function stochasticPreview(battle, side, temp) {
+	const {matchupScore} = require('./agent');
+	const mine = side.pokemon, theirs = side.foe.pokemon;
+	const score = mine.map(p => theirs.reduce((t, f) => t + matchupScore(battle, p, f), 0));
+	const trios = [];
+	for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) for (let k = j + 1; k < mine.length; k++) {
+		trios.push({m: [i, j, k], s: score[i] + score[j] + score[k]});
+	}
+	const top = Math.max(...trios.map(t => t.s));
+	const w = trios.map(t => Math.exp((t.s - top) / temp));
+	const seed = String(battle.prngSeed) + side.id;
+	let h = 2166136261;
+	for (let c = 0; c < seed.length; c++) h = Math.imul(h ^ seed.charCodeAt(c), 16777619);
+	let r = ((h >>> 0) / 4294967296) * w.reduce((a, b) => a + b, 0);
+	let pick = trios[trios.length - 1];
+	for (let t = 0; t < trios.length; t++) if ((r -= w[t]) <= 0) { pick = trios[t]; break; }
+	const order = pick.m.slice().sort((a, b) => score[b] - score[a]);
+	const rest = mine.map((_, i) => i).filter(i => !order.includes(i));
+	return 'team ' + [...order, ...rest].map(i => i + 1).join('');
+}
+
+// 'heuristic2!unaware,fakeout' is heuristic2 with those rule groups switched off (sim/agent.js), for ablations;
+// 'rollout4all~p1' is rollout4all with a randomized team preview at temperature 1 (stochasticPreview)
 function resolveAgent(name) {
 	if (AGENTS[name]) return AGENTS[name];
+	const pm = /^(.+)~p([0-9.]+)$/.exec(String(name));
+	if (pm) {
+		const base = resolveAgent(pm[1]), temp = Number(pm[2]);
+		return AGENTS[name] = (b, s) => (s.activeRequest && s.activeRequest.teamPreview ? stochasticPreview(b, s, temp) : base(b, s));
+	}
 	const m = /^heuristic2!(.+)$/.exec(String(name));
 	if (m) {
 		const off = new Set(m[1].split(','));

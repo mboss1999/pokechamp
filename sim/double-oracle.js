@@ -3,7 +3,8 @@
 //
 // Team choice is a symmetric zero-sum game (both players pick six from the same roster, then play), so the strongest
 // strategy is an equilibrium mix of teams, not one team against a fixed field. Double oracle builds it:
-//   1. a population of teams, and their payoff matrix (each pair's win rate, strong pilot, mirrored games)
+//   1. a population of teams, and their payoff matrix: each pair's value as a team-preview game (which three each
+//      side brings, sim/preview-game.js), strong pilot
 //   2. solve the matrix game (sim/nash.js): the equilibrium mix over the population; its value is 50% by symmetry
 //   3. best response: team search (sim/team-search.js) against opponents drawn from that mix
 //   4. if the best response beats the mix by more than --eps (default 1 point), add it and repeat; else stop
@@ -30,6 +31,14 @@ async function main() {
 	const PAIR_GAMES = Number(arg('pair-games', 300)); // per ordered pair of teams (mirrored: half from each side)
 	const EPS = Number(arg('eps', 0.01));
 	const STRONG = arg('strong', 'rollout4all');
+	// payoff of a pair of teams: 'preview' (default) = the team-preview game's equilibrium value (sim/preview-game.js);
+	// 'battle' = plain 6v6 battles, where each pilot always brings the same three against a given team
+	const PAYOFF = arg('payoff', 'preview');
+	// the best-response search plays with a randomized preview (sim/battle.js stochasticPreview), so it can't win by
+	// beating one fixed pick; PREVIEW_TEMP 0 turns that off
+	const PREVIEW_TEMP = Number(arg('preview-temp', 1));
+	const {previewValue} = require('./preview-game');
+	let previewBattles = {fast: 0, strong: 0};
 	let pool;
 	if (arg('pool', 'local') === 'lambda') {
 		const {LambdaPool} = require('./lambdapool');
@@ -50,6 +59,16 @@ async function main() {
 		M[i][i] = 0.5;
 		if (!i) return;
 		const rng = mulberry32(hash(teamKey(team)) + 17);
+		if (PAYOFF === 'preview') {
+			await Promise.all(pop.slice(0, i).map(async (q, j) => {
+				const r = await previewValue(pool, pop[i].sets, q.sets, mulberry32(hash(teamKey(team) + '|' + teamKey(q.team))), {
+					strong: STRONG, screenGames: Number(arg('screen-games', 4)), strongGames: Number(arg('strong-games', 12)), keep: Number(arg('keep', 6))});
+				previewBattles.fast += r.battles.fast; previewBattles.strong += r.battles.strong;
+				M[i][j] = r.value;
+				M[j][i] = 1 - r.value;
+			}));
+			return;
+		}
 		const jobs = [], meta = [];
 		for (let j = 0; j < i; j++) {
 			for (let g = 0; g < PAIR_GAMES / 2; g++) {
@@ -83,7 +102,7 @@ async function main() {
 	const save = (extra = {}) => {
 		fs.mkdirSync(path.dirname(OUT), {recursive: true});
 		const mix = pop.length ? solveMix() : {x: []};
-		fs.writeFileSync(OUT, JSON.stringify({results: results.meta.generatedAt, pairGames: PAIR_GAMES, eps: EPS, strongBattles,
+		fs.writeFileSync(OUT, JSON.stringify({results: results.meta.generatedAt, payoff: PAYOFF, pairGames: PAIR_GAMES, eps: EPS, strongBattles, previewBattles,
 			population: pop.map((p, i) => ({label: p.label, team: p.team, sets: p.sets, weight: +(mix.x[i] || 0).toFixed(4)})),
 			matrix: M.map(r => r.map(v => +v.toFixed(4))), ...extra}, null, 1));
 	};
@@ -106,7 +125,8 @@ async function main() {
 			for (const s of support) if ((r -= s.w) <= 0) return pop[s.i].sets;
 			return pop[support[0].i].sets;
 		};
-		ts = new TeamSearch({pool, results, opponent: sample, candidates, log: m => log('  ' + m),
+		const sfx = PREVIEW_TEMP > 0 ? `~p${PREVIEW_TEMP}` : '';
+		ts = new TeamSearch({pool, results, opponent: sample, candidates, log: m => log('  ' + m), fast: `heuristic2${sfx}`, strong: `${STRONG}${sfx}`,
 			size: {screen: Math.round(120 * scale), refine: Math.round(400 * scale), confirm: Math.round(1000 * scale)}});
 		// best response from the strongest support team (and the best builder team not in the support)
 		const r = await ts.search(pop[support[0].i].team, it, Number(arg('steps', 12)));
