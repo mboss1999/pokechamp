@@ -319,6 +319,27 @@ one would not change the tool's decisions?
   an RL agent) can find one. The heuristic2 Unaware rule found this way (opponents set up into Unaware Clefable on 59
   of 683 turns) is now fixed, though it moves overall results by only 50.1% ± 0.1.
 
+### Team preview: the AI's weakest link (2026-11-16)
+
+Every pilot picks its three at team preview by one fixed rule (the three with the best summed matchup scores), so a
+team brings the same three against a given opponent every time. Two consequences, found while building the
+"Strongest teams" results (`out/strongest/`):
+
+- **Counter-teams are artifacts under fixed picks.** In the first double-oracle run 12 of 28 team pairs ended 90-100%
+  one way over 300 games; with both sides choosing their three by equilibrium (`sim/preview-game.js`: the fast pilot
+  screens all 20x20 trio pairings, the strong pilot decides each side's 6 best) a 100% pair became 17%, others 34-64%.
+  The double oracle now uses these team-preview-game payoffs (`--payoff preview`) and a randomized preview in its
+  search (`agent~pT` pilots pick trio t with probability ~ exp(score / T)).
+- **The ladder team search optimized around the fixed pick.** Searched teams beat their Team Builder starting teams
+  by 7-13 points against the ladder field with fixed picks (replicated on fresh seeds and on each part of the field),
+  but by +2 to +6 with randomized picks at T = 0.5 and about 0 at T = 1, and the starting team scored highest
+  (66.4% against 61.5-64.6%) as a team-preview game against 100 field teams (`sim/preview-check.js`). The starting
+  team rose from 52% to 62-66% once its three wasn't forced: the fixed rule picked badly for it, and the search's
+  swaps mostly changed which three the rule picks.
+
+So team-level results must be judged with good preview play on both sides (the preview game), and the practical ladder
+search has to be redone that way; the preview rule itself is the first thing to improve in the battle AI.
+
 ### Convergence benchmark
 
 `sim/bench.js` checks whether more simulation would still change decisions. A level is good enough when its
