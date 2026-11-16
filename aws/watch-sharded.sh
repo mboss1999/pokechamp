@@ -10,6 +10,8 @@ BUCKET="${BUCKET:-champions-sim-$ACCOUNT}"
 GROUP="${1:-$(cat aws/.last-sharded)}"
 WARN_GB="${WARN_GB:-100}"
 POLL="${POLL:-120}"
+HEARTBEAT="${HEARTBEAT:-1800}" # seconds between progress summaries (0: none)
+last_beat=$(date +%s)
 SHARED="s3://$BUCKET/runs/$GROUP/shared"
 declare -A seen_err last_state
 prev_shared=""
@@ -21,7 +23,7 @@ while true; do
 		prev_shared="$shared"
 	fi
 	if grep -qw "results.json" <<<"$shared"; then echo "$(date -u +%H:%M) DONE: $SHARED/results.json"; exit 0; fi
-	stopped=0; total=0
+	stopped=0; total=0; beat=""
 	while read -r k RUN; do
 		total=$((total + 1))
 		state="$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:Name,Values=champions-sim-$RUN" \
@@ -36,10 +38,14 @@ while true; do
 		log="$(aws s3 cp "s3://$BUCKET/runs/$RUN/run.log" - --region "$REGION" 2>/dev/null)"
 		rss="$(grep -o 'rss=[0-9]*MB' <<<"$log" | tail -1 | tr -dc 0-9)"
 		[ -n "$rss" ] && [ "$rss" -gt $((WARN_GB * 1024)) ] && echo "$(date -u +%H:%M) shard $k: MEMORY rss=${rss}MB"
+		prog="$(grep -oE '^\[[0-9:]+\] +[0-9]+/[0-9]+ \(' <<<"$log" | tail -1 | grep -oE '[0-9]+/[0-9]+')"
+		pass="$(grep -oE 'sets: pass [0-9]/[0-9]|matchups|ladder' <<<"$log" | tail -1)"
+		beat="$beat s$k:${pass:-?} ${prog:-0} $((${rss:-0} / 1024))GB;"
 		errs="$(grep -E 'Error|exited with|FATAL|heap out of memory|failures=[1-9]' <<<"$log" | tail -3)"
 		h="$(md5sum <<<"$errs" | cut -c1-8)"
 		if [ -n "$errs" ] && [ "${seen_err[$k]:-}" != "$h" ]; then echo "$(date -u +%H:%M) shard $k: ERRORS: $(tr '\n' ' ' <<<"$errs" | cut -c1-300)"; seen_err[$k]="$h"; fi
 	done < <(awk '$1 == "shard" {r[$2] = $3} END {for (k in r) print k, r[k]}' "aws/.sharded-$GROUP" | sort -n)
+	if [ "$HEARTBEAT" -gt 0 ] && [ $(( $(date +%s) - last_beat )) -ge "$HEARTBEAT" ]; then echo "$(date -u +%H:%M) progress:$beat"; last_beat=$(date +%s); fi
 	if [ "$total" -gt 0 ] && [ "$stopped" -eq "$total" ]; then echo "$(date -u +%H:%M) ALL MACHINES STOPPED without shared/results.json"; exit 1; fi
 	sleep "$POLL"
 done
