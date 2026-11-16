@@ -14,7 +14,8 @@ HEARTBEAT="${HEARTBEAT:-1800}" # seconds between progress summaries (0: none)
 last_beat=$(date +%s)
 SHARED="s3://$BUCKET/runs/$GROUP/shared"
 declare -A seen_err last_state
-prev_shared=""
+# files already there when the watch starts are not news
+prev_shared="$(aws s3 ls "$SHARED/" --recursive --region "$REGION" 2>/dev/null | awk '{print $4}' | sed "s|runs/$GROUP/shared/||" | sort | tr '\n' ' ')"
 while true; do
 	shared="$(aws s3 ls "$SHARED/" --recursive --region "$REGION" 2>/dev/null | awk '{print $4}' | sed "s|runs/$GROUP/shared/||" | sort | tr '\n' ' ')"
 	if [ "$shared" != "$prev_shared" ]; then
