@@ -27,7 +27,8 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 	}).slice(0, Number(arg('top', 4)));
 	// always include the builder's first start for reference
 	const builder = search.teams.find(t => t.kind === 'builder');
-	if (builder && !teams.includes(builder)) teams.push(builder);
+	if (builder && !teams.includes(builder)) teams.unshift(builder);
+	else if (builder) teams.splice(teams.indexOf(builder), 1), teams.unshift(builder);
 	const replayTeams = arg('replays') ? require('./team-bench-lib').realTeams(path.resolve(arg('replays')), results, arg('chaos'), 1250).map(t => t.team) : [];
 	const field = new Field({results, ingame: arg('ingame'), chaos: arg('chaos'), replayTeams, replayShare: 0.5});
 	const rng = mulberry32(hash('preview-check') + Number(arg('salt', 0)));
@@ -38,7 +39,7 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 		pool = new LambdaPool({concurrency: Number(arg('concurrency', 600))});
 		await pool.check();
 	} else pool = new (require('./pool').Pool)();
-	const STRONG = arg('strong', 'rollout4all');
+	const STRONG = arg('strong', 'rollout4all'); // plain battles' pilot (e.g. rollout4all~v); preview games enumerate the picks
 	const BATTLE_GAMES = Number(arg('battle-games', 20));
 	const report = {opponents: opps.length, teams: []};
 	for (const t of teams) {
@@ -59,9 +60,18 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 		const d = prevV.map((v, k) => v - plainV[k]);
 		const row = {team: t.team, kind: t.kind, searchWinRate: t.winRate, plain: +mean(plainV).toFixed(4), plainSe: +(sd(plainV) / Math.sqrt(opps.length)).toFixed(4),
 			preview: +mean(prevV).toFixed(4), previewSe: +(sd(prevV) / Math.sqrt(opps.length)).toFixed(4), diff: +mean(d).toFixed(4), diffSe: +(sd(d) / Math.sqrt(opps.length)).toFixed(4)};
+		row.perOpponent = {plain: plainV.map(v => +v.toFixed(4)), preview: prevV.map(v => +v.toFixed(4))};
+		// paired against the first team (the Team Builder's) on the same opponents
+		const first = report.teams[0];
+		if (first) {
+			const dd = prevV.map((v, k) => v - first.perOpponent.preview[k]);
+			row.previewVsFirst = {diff: +mean(dd).toFixed(4), se: +(sd(dd) / Math.sqrt(opps.length)).toFixed(4)};
+		}
 		report.teams.push(row);
 		console.log(`${t.kind.padEnd(9)} plain ${(100 * row.plain).toFixed(1)}% ± ${(100 * row.plainSe).toFixed(1)}  preview game ${(100 * row.preview).toFixed(1)}% ± ${(100 * row.previewSe).toFixed(1)}` +
-			`  (diff ${(100 * row.diff).toFixed(1)} ± ${(100 * row.diffSe).toFixed(1)})  ${t.team}  [${((Date.now() - t0) / 1000).toFixed(0)}s]`);
+			`  (diff ${(100 * row.diff).toFixed(1)} ± ${(100 * row.diffSe).toFixed(1)})` +
+			(row.previewVsFirst ? `  preview vs first team ${(100 * row.previewVsFirst.diff).toFixed(1)} ± ${(100 * row.previewVsFirst.se).toFixed(1)}` : '') +
+			`  ${t.team}  [${((Date.now() - t0) / 1000).toFixed(0)}s]`);
 		fs.mkdirSync(path.dirname(path.resolve(arg('out', 'out/preview-check.json'))), {recursive: true});
 		fs.writeFileSync(path.resolve(arg('out', 'out/preview-check.json')), JSON.stringify(report, null, 1));
 	}

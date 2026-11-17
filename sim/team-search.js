@@ -203,7 +203,8 @@ if (require.main === module) {
 		const t0 = Date.now();
 		const log = m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`);
 		const scale = Number(arg('scale', 1));
-		const ts = new TeamSearch({pool, results, opponent, candidates, log,
+		// --fast / --strong pilots, both sides (e.g. heuristic2~v / rollout4all~v: team preview from the 1v1 matrix)
+		const ts = new TeamSearch({pool, results, opponent, candidates, log, fast: arg('fast', 'heuristic2'), strong: arg('strong', 'rollout4all'),
 			size: {screen: Math.round(120 * scale), refine: Math.round(400 * scale), confirm: Math.round(1000 * scale)}});
 		const starts = (await builderTeams(results, Number(arg('starts', 3)) * 2)).slice(0, Number(arg('starts', 3)));
 		const found = [];
