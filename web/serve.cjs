@@ -49,10 +49,17 @@ function readBody(req, limit = 100 * 1024) {
 	});
 }
 
+// APP_POOL=lambda plays the server's own battles (draft analyses, and tunings when no cloud machine is available) on
+// AWS Lambda instead of this computer's cores: for running the app on a small always-on host (aws/app-host.sh).
 function getPool() {
 	if (!pool) {
-		const {Pool} = require('../sim/pool');
-		pool = new Pool();
+		if (process.env.APP_POOL === 'lambda') {
+			const {LambdaPool} = require('../sim/lambdapool');
+			pool = new LambdaPool({concurrency: Number(process.env.APP_LAMBDA_CONCURRENCY) || 400});
+		} else {
+			const {Pool} = require('../sim/pool');
+			pool = new Pool();
+		}
 	}
 	return pool;
 }
