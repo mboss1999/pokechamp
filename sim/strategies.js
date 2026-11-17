@@ -26,7 +26,16 @@ const out = {generatedAt: new Date().toISOString(), results: RESULTS.meta.genera
 const ladder = read(arg('ladder'));
 if (ladder) {
 	const tuned = read(arg('tuned')); // [{team index, refine result}] from the tuning step
-	const teams = ladder.teams.slice().sort((a, b) => b.winRate - a.winRate);
+	// --preview: sim/preview-check.js output; its team-preview-game values (both sides choose their three by
+	// equilibrium) are the reported win rates, and teams are ranked by them
+	const preview = read(arg('preview'));
+	const pv = new Map((preview ? preview.teams : []).map(r => [r.team, r]));
+	if (preview) {
+		ladder.teams = ladder.teams.filter(t => pv.has(t.team));
+		for (const t of ladder.teams) { const r = pv.get(t.team); t.previewWinRate = r.preview; t.previewSe = r.previewSe; }
+	}
+	const score = t => t.previewWinRate ?? t.winRate;
+	const teams = ladder.teams.slice().sort((a, b) => score(b) - score(a));
 	const seen = new Set();
 	out.ladder = {fieldInfo: arg('field-info', ''), battles: ladder.battles, teams: []};
 	for (const t of teams) {
@@ -36,7 +45,10 @@ if (ladder) {
 		const tune = tuned && tuned.find(x => x.key === key);
 		const r = tune && tune.result;
 		out.ladder.teams.push({
-			kind: t.kind, winRate: r ? r.after.winRate : t.winRate, se: r ? +(r.after.ci95 / 1.96).toFixed(4) : t.se,
+			kind: t.kind,
+			winRate: t.previewWinRate ?? (r ? r.after.winRate : t.winRate),
+			se: t.previewSe ?? (r ? +(r.after.ci95 / 1.96).toFixed(4) : t.se),
+			measure: t.previewWinRate !== undefined ? 'preview game' : 'battles',
 			members: t.sets.map((s, i) => r && !r.revertedTuning ? {entryId: r.members[i].entryId, set: r.members[i].refined, changes: r.members[i].changes,
 				bringRate: r.members[i].bringRate, leadRate: r.members[i].leadRate} : member(s)),
 			threats: r ? r.threats : [],

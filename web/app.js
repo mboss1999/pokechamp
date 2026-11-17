@@ -348,7 +348,8 @@ async function renderStrongest() {
 	if (strategies.ladder) {
 		html += `<h2 class="section">Best against today's ladder</h2><p class="hint">${esc(strategies.ladder.fieldInfo || '')}</p>`;
 		html += strategies.ladder.teams.map((t, i) => strategyTeamHtml(t, `Ladder team ${i + 1}`,
-			`Wins <b>${pm(t.winRate, t.se)}</b> against ladder teams (strong AI on both sides)`)).join('');
+			`Wins <b>${pm(t.winRate, t.se)}</b> against ladder teams` + (t.measure === 'preview game'
+				? ' (strong AI; both sides choose their three as well as possible)' : ' (strong AI on both sides)'))).join('');
 	}
 	if (!strategies.ladder) {
 		html += `<h2 class="section">Best against today's ladder</h2><p class="hint">Being recomputed. The first search's gains came
