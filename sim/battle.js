@@ -60,10 +60,74 @@ function stochasticPreview(battle, side, temp) {
 	return 'team ' + [...order, ...rest].map(i => i + 1).join('');
 }
 
+// The pipeline's 1v1 matrix (strong pilot, HP margin) from web/data/results.json, loaded once per worker.
+let oneVsOne = null;
+function loadOneVsOne() {
+	if (oneVsOne !== null) return oneVsOne;
+	try {
+		const fs = require('fs'), path = require('path');
+		const file = process.env.PREVIEW_RESULTS || path.join(__dirname, '..', 'web', 'data', 'results.json');
+		const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+		const N = r.matchups.ids.length, K = r.meta.matchupBattlesPerPair || 8;
+		const bin = Buffer.from(r.matchups.data, 'base64');
+		const idx = new Map(r.matchups.ids.map((id, i) => [id, i]));
+		const byKey = new Map(r.entries.map(e => [`${e.species}|${e.megaItem || ''}`, idx.get(e.id)]));
+		oneVsOne = {N, K, bin, byKey};
+	} catch (e) {
+		oneVsOne = false;
+	}
+	return oneVsOne;
+}
+
+/**
+ * Team preview from the 1v1 matrix: each trio scores the sum of its members' 1v1 results against the six foes, and is
+ * picked with probability ~ exp(score / temp) (temp 0.05: almost always the best trio, but not predictably). On 30
+ * ladder team pairs (sim/preview-bench.js, strong pilot, all 20 x 20 trio pairings) this gives up 4.2 ± 1.9 points
+ * less win rate against the opponent's equilibrium pick than the matchup-score rule. Pokémon not in the roster
+ * fall back to the matchup score.
+ */
+function oneVsOnePreview(battle, side, temp) {
+	const {matchupScore} = require('./agent');
+	const m = loadOneVsOne();
+	const mine = side.pokemon, theirs = side.foe.pokemon;
+	const key = p => `${p.set.species}|${/ite( [XYZ])?$/.test(p.set.item || '') && battle.dex.items.get(p.set.item).megaStone ? battle.dex.items.get(p.set.item).name : ''}`;
+	const index = p => {
+		if (!m) return undefined;
+		const k = key(p);
+		return m.byKey.has(k) ? m.byKey.get(k) : m.byKey.get(`${p.set.species}|`);
+	};
+	const im = mine.map(index), it = theirs.map(index);
+	const v = (a, b, pa, pb) => (a === undefined || b === undefined)
+		? Math.max(-0.5, Math.min(0.5, matchupScore(battle, pa, pb) / 4))
+		: ((m.bin[a * m.N + b] / 255 * m.K + 1) / (m.K + 2)) - 0.5;
+	const score = mine.map((p, i) => theirs.reduce((t, f, j) => t + v(im[i], it[j], p, f), 0));
+	const trios = [];
+	for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) for (let k = j + 1; k < mine.length; k++) {
+		trios.push({m: [i, j, k], s: score[i] + score[j] + score[k]});
+	}
+	const top = Math.max(...trios.map(t => t.s));
+	const w = trios.map(t => Math.exp((t.s - top) / temp));
+	const seed = String(battle.prngSeed) + side.id + 'v';
+	let h = 2166136261;
+	for (let c = 0; c < seed.length; c++) h = Math.imul(h ^ seed.charCodeAt(c), 16777619);
+	let r = ((h >>> 0) / 4294967296) * w.reduce((a, b) => a + b, 0);
+	let pick = trios[trios.length - 1];
+	for (let t = 0; t < trios.length; t++) if ((r -= w[t]) <= 0) { pick = trios[t]; break; }
+	const order = pick.m.slice().sort((a, b) => score[b] - score[a]);
+	const rest = mine.map((_, i) => i).filter(i => !order.includes(i));
+	return 'team ' + [...order, ...rest].map(i => i + 1).join('');
+}
+
 // 'heuristic2!unaware,fakeout' is heuristic2 with those rule groups switched off (sim/agent.js), for ablations;
+// 'rollout4all~v' picks at team preview from the 1v1 matrix (oneVsOnePreview, temp 0.05; '~v0.1' sets the temp);
 // 'rollout4all~p1' is rollout4all with a randomized team preview at temperature 1 (stochasticPreview)
 function resolveAgent(name) {
 	if (AGENTS[name]) return AGENTS[name];
+	const vm = /^(.+)~v([0-9.]*)$/.exec(String(name));
+	if (vm) {
+		const base = resolveAgent(vm[1]), temp = Number(vm[2] || 0.05);
+		return AGENTS[name] = (b, s) => (s.activeRequest && s.activeRequest.teamPreview ? oneVsOnePreview(b, s, temp) : base(b, s));
+	}
 	const pm = /^(.+)~p([0-9.]+)$/.exec(String(name));
 	if (pm) {
 		const base = resolveAgent(pm[1]), temp = Number(pm[2]);
