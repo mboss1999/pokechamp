@@ -350,6 +350,11 @@ async function renderStrongest() {
 		html += strategies.ladder.teams.map((t, i) => strategyTeamHtml(t, `Ladder team ${i + 1}`,
 			`Wins <b>${pm(t.winRate, t.se)}</b> against ladder teams (strong AI on both sides)`)).join('');
 	}
+	if (!strategies.ladder) {
+		html += `<h2 class="section">Best against today's ladder</h2><p class="hint">Being recomputed. The first search's gains came
+			mostly from how the AI picks its three at team preview, not from stronger teams, so its teams are withheld until
+			they're re-scored with good preview play on both sides.</p>`;
+	}
 	if (strategies.equilibrium) {
 		const eq = strategies.equilibrium;
 		html += `<h2 class="section">Theoretically strongest (equilibrium)</h2><p class="hint">${eq.converged

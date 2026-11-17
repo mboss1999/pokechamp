@@ -1,0 +1,254 @@
+{
+ "generatedAt": "2026-11-17T13:40:13.550Z",
+ "results": "2026-11-16T12:45:59.340Z",
+ "equilibrium": {
+  "converged": false,
+  "reason": "",
+  "eps": 0.02,
+  "population": 14,
+  "teams": [
+   {
+    "weight": 0.7499,
+    "label": "br6",
+    "members": [
+     {
+      "entryId": "lucario-lucarionitez",
+      "set": {
+       "item": "Lucarionite Z",
+       "ability": "Justified",
+       "nature": "Timid",
+       "moves": [
+        "Psychic",
+        "Flash Cannon",
+        "Focus Blast",
+        "Dark Pulse"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "dragonite",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Multiscale",
+       "nature": "Jolly",
+       "moves": [
+        "Dragon Dance",
+        "Earthquake",
+        "Outrage",
+        "Iron Head"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "sneasler",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Unburden",
+       "nature": "Adamant",
+       "moves": [
+        "Quick Attack",
+        "Close Combat",
+        "Gunk Shot",
+        "Throat Chop"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "archaludon",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Sturdy",
+       "nature": "Modest",
+       "moves": [
+        "Dragon Pulse",
+        "Flash Cannon",
+        "Dark Pulse",
+        "Thunderbolt"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "primarina",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Torrent",
+       "nature": "Modest",
+       "moves": [
+        "Moonblast",
+        "Sparkling Aria",
+        "Aqua Jet",
+        "Calm Mind"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "skeledirge",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Unaware",
+       "nature": "Bold",
+       "moves": [
+        "Slack Off",
+        "Will-O-Wisp",
+        "Torch Song",
+        "Shadow Ball"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5
+   },
+   {
+    "weight": 0.2457,
+    "label": "br1",
+    "members": [
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "dragonite",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Multiscale",
+       "nature": "Jolly",
+       "moves": [
+        "Dragon Dance",
+        "Earthquake",
+        "Outrage",
+        "Iron Head"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "pidgeot-pidgeotite",
+      "set": {
+       "item": "Pidgeotite",
+       "ability": "Tangled Feet",
+       "nature": "Timid",
+       "moves": [
+        "Hurricane",
+        "Heat Wave",
+        "Quick Attack",
+        "Roost"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "floetteeternal",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Flower Veil",
+       "nature": "Modest",
+       "moves": [
+        "Moonblast",
+        "Psychic",
+        "Energy Ball",
+        "Chilling Water"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "azumarill",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Huge Power",
+       "nature": "Adamant",
+       "moves": [
+        "Aqua Jet",
+        "Knock Off",
+        "Belly Drum",
+        "Play Rough"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "clefable",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Unaware",
+       "nature": "Bold",
+       "moves": [
+        "Cosmic Power",
+        "Moonblast",
+        "Moonlight",
+        "Calm Mind"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5
+   }
+  ]
+ }
+}
