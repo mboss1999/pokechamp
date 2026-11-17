@@ -9,7 +9,8 @@
 #
 # The host has no SSH key and accepts no inbound connections (Tailscale connects outward). It keeps itself current:
 # every 5 minutes it fetches BRANCH and, when it moved, pulls, reinstalls and restarts the app, so pushing to the
-# branch is how results and code reach it. Status and the Tailscale login link are read from its console log.
+# branch is how results and code reach it. It reports its setup log, the Tailscale login link and its URL to
+# s3://<bucket>/app-host/ (this session's role can't read instance consoles).
 #
 # Env: INSTANCE_TYPE (t4g.small), BRANCH (the git branch the host follows; default: this checkout's).
 set -euo pipefail
@@ -22,17 +23,17 @@ id_of() { aws ec2 describe-instances --region $REGION --filters "Name=tag:Name,V
 	--query 'Reservations[].Instances[].InstanceId' --output text; }
 ip_of() { aws ec2 describe-instances --region $REGION --instance-ids "$1" --query 'Reservations[].Instances[].PublicIpAddress' --output text; }
 
-console() { aws ec2 get-console-output --region $REGION --instance-id "$1" --latest --output text 2>/dev/null; }
+ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+S3="s3://champions-sim-$ACCOUNT/app-host"
 case "${1:-launch}" in
 status)
 	ID="$(id_of)"; [ -z "$ID" ] && { echo "no $NAME instance"; exit 0; }
 	echo "$ID $(aws ec2 describe-instances --region $REGION --instance-ids "$ID" --query 'Reservations[].Instances[].State.Name' --output text)"
-	console "$ID" | grep -E "pokechamp-setup|pokechamp-update|TAILSCALE" | tail -8
+	aws s3 cp --quiet "$S3/setup.log" - 2>/dev/null | tail -${LINES:-8}
 	exit 0 ;;
 url)
-	ID="$(id_of)"; [ -z "$ID" ] && { echo "no $NAME instance"; exit 1; }
-	console "$ID" | grep -o 'https://login.tailscale.com/[^ ]*' | tail -1
-	console "$ID" | grep -oE 'APP URL: .*' | tail -1
+	aws s3 cp --quiet "$S3/tailscale-login.txt" - 2>/dev/null
+	aws s3 cp --quiet "$S3/app-url.txt" - 2>/dev/null
 	exit 0 ;;
 esac
 
@@ -46,6 +47,10 @@ USERDATA="$(cat <<EOF
 #!/bin/bash
 exec > >(tee -a /var/log/pokechamp-setup.log | logger -t pokechamp-setup -s 2>/dev/console) 2>&1
 set -euxo pipefail
+report() { aws s3 cp --quiet --region $REGION /var/log/pokechamp-setup.log $S3/setup.log || true; }
+trap report EXIT
+aws s3 rm --quiet --region $REGION $S3/tailscale-login.txt || true
+aws s3 rm --quiet --region $REGION $S3/app-url.txt || true
 dnf install -y git tar xz
 curl -fsSL https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-linux-arm64.tar.xz | tar -xJ -C /opt
 ln -sfn /opt/node-$NODE_VERSION-linux-arm64 /opt/node
@@ -107,13 +112,15 @@ curl -fsSL https://tailscale.com/install.sh | sh
 systemctl enable --now tailscaled
 # prints a login link (also to the console log); waits until the host is approved
 (tailscale up --ssh --hostname=pokechamp > /var/log/tailscale-up.log 2>&1 &)
-for i in \$(seq 1 30); do grep -o 'https://login.tailscale.com/[^ ]*' /var/log/tailscale-up.log && break; sleep 2; done | head -1 | sed 's/^/TAILSCALE LOGIN: /' > /dev/console || true
+for i in \$(seq 1 60); do grep -q 'https://login.tailscale.com/' /var/log/tailscale-up.log && break; sleep 2; done
+grep -o 'https://login.tailscale.com/[^ ]*' /var/log/tailscale-up.log | head -1 | aws s3 cp --quiet --region $REGION - $S3/tailscale-login.txt || true
+report
 until tailscale status >/dev/null 2>&1; do sleep 5; done
 if tailscale serve --bg --https=443 http://127.0.0.1:5173; then
-	echo "APP URL: https://\$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')" > /dev/console
+	echo "https://\$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')" | aws s3 cp --quiet --region $REGION - $S3/app-url.txt
 else
 	tailscale serve --bg --http=80 http://127.0.0.1:5173
-	echo "APP URL: http://pokechamp (or http://\$(tailscale ip -4))" > /dev/console
+	echo "http://pokechamp (or http://\$(tailscale ip -4))" | aws s3 cp --quiet --region $REGION - $S3/app-url.txt
 fi
 echo "pokechamp app host ready" > /dev/console
 EOF
@@ -124,4 +131,4 @@ ID="$(aws ec2 run-instances --region $REGION --image-id "$AMI" --instance-type "
 	--metadata-options HttpTokens=required \
 	--tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=project,Value=champions-sim}]" \
 	--user-data "$USERDATA" --query 'Instances[0].InstanceId' --output text)"
-echo "launched $ID ($NAME, following branch $BRANCH). In ~3 minutes: aws/app-host.sh url  -> open the Tailscale login link"
+echo "launched $ID ($NAME, following branch $BRANCH). In ~3 minutes: aws/app-host.sh url  -> the Tailscale login link"
