@@ -47,6 +47,7 @@ function stochasticPreview(battle, side, temp) {
 	for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) for (let k = j + 1; k < mine.length; k++) {
 		trios.push({m: [i, j, k], s: score[i] + score[j] + score[k]});
 	}
+	if (!trios.length) trios.push({m: mine.map((_, i) => i), s: 0}); // fewer than 3: bring everyone
 	const top = Math.max(...trios.map(t => t.s));
 	const w = trios.map(t => Math.exp((t.s - top) / temp));
 	const seed = String(battle.prngSeed) + side.id;
@@ -105,6 +106,8 @@ function oneVsOnePreview(battle, side, temp) {
 	for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) for (let k = j + 1; k < mine.length; k++) {
 		trios.push({m: [i, j, k], s: score[i] + score[j] + score[k]});
 	}
+	// fewer than 3 (set search drops a partner that shares the candidate's item): bring everyone, lead the best
+	if (!trios.length) trios.push({m: mine.map((_, i) => i), s: 0});
 	const top = Math.max(...trios.map(t => t.s));
 	const w = trios.map(t => Math.exp((t.s - top) / temp));
 	const seed = String(battle.prngSeed) + side.id + 'v';
