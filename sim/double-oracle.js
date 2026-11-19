@@ -99,12 +99,14 @@ async function main() {
 		const r = solve(M.map(row => row.slice()), {iters: 20000, tol: 1e-5});
 		return {x: r.x, value: r.value, gap: r.gap};
 	};
+	let status = {}; // converged / reason, kept for the final save
 	const save = (extra = {}) => {
+		if ('converged' in extra) status = {converged: extra.converged, reason: extra.reason};
 		fs.mkdirSync(path.dirname(OUT), {recursive: true});
 		const mix = pop.length ? solveMix() : {x: []};
 		fs.writeFileSync(OUT, JSON.stringify({results: results.meta.generatedAt, payoff: PAYOFF, pairGames: PAIR_GAMES, eps: EPS, strongBattles, previewBattles,
 			population: pop.map((p, i) => ({label: p.label, team: p.team, sets: p.sets, weight: +(mix.x[i] || 0).toFixed(4)})),
-			matrix: M.map(r => r.map(v => +v.toFixed(4))), ...extra}, null, 1));
+			matrix: M.map(r => r.map(v => +v.toFixed(4))), ...status, ...extra}, null, 1));
 	};
 
 	// seed population: the Team Builder's teams (with and without its Mega preferences)
@@ -125,21 +127,35 @@ async function main() {
 			for (const s of support) if ((r -= s.w) <= 0) return pop[s.i].sets;
 			return pop[support[0].i].sets;
 		};
-		const sfx = PREVIEW_TEMP > 0 ? `~p${PREVIEW_TEMP}` : '';
+		// --search-suffix overrides the pilots' preview in the best-response search (e.g. ~v: the 1v1-matrix preview)
+		const sfx = arg('search-suffix', PREVIEW_TEMP > 0 ? `~p${PREVIEW_TEMP}` : '');
 		ts = new TeamSearch({pool, results, opponent: sample, candidates, log: m => log('  ' + m), fast: `heuristic2${sfx}`, strong: `${STRONG}${sfx}`,
 			size: {screen: Math.round(120 * scale), refine: Math.round(400 * scale), confirm: Math.round(1000 * scale)}});
-		// best response from the strongest support team (and the best builder team not in the support)
-		const r = await ts.search(pop[support[0].i].team, it, Number(arg('steps', 12)));
-		const br = r.team;
-		if (pop.some(p => teamKey(p.team) === teamKey(br))) {
-			log(`best response is already in the population (${ts.describe(br)}): no improving team found`);
+		// best response: search from the strongest support team, then (--br-starts K) from up to K-1 more population
+		// teams, best first against the mix, until one beats the mix by more than eps
+		const valueVsMix = i => support.reduce((a, s) => a + s.w * M[i][s.i], 0);
+		const starts = [support[0].i, ...pop.map((p, i) => i).filter(i => i !== support[0].i).sort((a, b) => valueVsMix(b) - valueVsMix(a))]
+			.slice(0, Math.max(1, Number(arg('br-starts', 1))));
+		let brValue = -1, found = 0;
+		for (const st of starts) {
+			const r = await ts.search(pop[st].team, it, Number(arg('steps', 12)));
+			const br = r.team;
+			if (pop.some(p => teamKey(p.team) === teamKey(br))) {
+				log(`best response from #${st} is already in the population (${ts.describe(br)})`);
+				continue;
+			}
+			await addTeam(br, `br${it}${found ? String.fromCharCode(97 + found) : ''}`);
+			found++;
+			const v = valueVsMix(pop.length - 1);
+			log(`best response from #${st} ${ts.describe(br)}: ${(100 * v).toFixed(1)}% against the mix`);
+			brValue = Math.max(brValue, v);
+			if (v - 0.5 >= EPS) break;
+		}
+		if (!found) {
+			log('no search start found a team outside the population: no improving team found');
 			save({iteration: it, converged: true, reason: 'search found no improving team'});
 			break;
 		}
-		await addTeam(br, `br${it}`);
-		const i = pop.length - 1;
-		const brValue = support.reduce((a, s) => a + s.w * M[i][s.i], 0);
-		log(`best response ${ts.describe(br)}: ${(100 * brValue).toFixed(1)}% against the mix`);
 		if (brValue - 0.5 < EPS) {
 			save({iteration: it, converged: true, reason: `best response gains ${(100 * (brValue - 0.5)).toFixed(1)} pp < eps`});
 			log('converged');
@@ -151,7 +167,7 @@ async function main() {
 	log('equilibrium mix:');
 	pop.map((p, i) => ({p, w: mix.x[i], i})).filter(x => x.w > 0.01).sort((a, b) => b.w - a.w)
 		.forEach(x => log(`  ${(100 * x.w).toFixed(1)}%  #${x.i} ${x.p.label}  ${ts ? ts.describe(x.p.team) : ''}`));
-	log(`done: ${strongBattles} strong battles for the matrix${ts ? ` + search battles` : ''}; failed ${pool.failed || 0}`);
+	log(`done: ${strongBattles + previewBattles.strong} strong battles for the matrix${ts ? ` + search battles` : ''}; failed ${pool.failed || 0}`);
 	pool.close();
 }
 

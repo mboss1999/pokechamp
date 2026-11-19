@@ -131,7 +131,7 @@ class LambdaPool {
 
 	/** Play one empty chunk, to check the function answers (and warm it up). */
 	async check() {
-		const r = await this.invoke([]);
+		const r = await this.invokeRetrying([]);
 		if (!r || !Array.isArray(r.results)) throw new Error(`Lambda ${FUNCTION} gave no results`);
 	}
 

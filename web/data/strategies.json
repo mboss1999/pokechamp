@@ -1,592 +1,693 @@
 {
- "generatedAt": "2026-11-17T15:54:06.080Z",
- "results": "2026-11-16T12:45:59.340Z",
+ "generatedAt": "2026-11-19T18:19:21.341Z",
+ "results": "2026-11-19T10:11:33.438Z",
  "ladder": {
-  "fieldInfo": "Against what Champions ranked players bring now: in-game ranked Singles data (championsbattledata.com, 2026-11-16), Showdown usage stats (Oct 2026, 1760+) and 248 teams from top-100 players' replays, 150 opponents. These three are within about 2 points of each other: the search found no single change that measurably beats the Team Builder's best team when both sides pick their three well.",
+  "fieldInfo": "Against what Champions ranked players bring now: in-game ranked Singles data (championsbattledata.com, 2026-11-16), Showdown usage stats (Oct 2026, 1760+) and 248 teams from top-100 players' replays, 150 opponents, both sides choosing their three from the 1v1 matrix. The Team Builder's best team (67.9%) is ahead of every searched change; the closest, Arcanine-Hisui for Mimikyu, scores 66.4%.",
   "battles": {
-   "fast": 157080,
-   "strong": 28000
+   "fast": 362280,
+   "strong": 40000
   },
   "teams": [
    {
-    "kind": "searched",
-    "winRate": 0.6591,
-    "se": 0.0151,
-    "measure": "preview game",
-    "members": [
-     {
-      "entryId": "golisopod-golisopite",
-      "set": {
-       "item": "Golisopite",
-       "ability": "Emergency Exit",
-       "nature": "Adamant",
-       "moves": [
-        "Swords Dance",
-        "Aqua Jet",
-        "Leech Life",
-        "Sucker Punch"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "atk": 32,
-        "def": 2
-       }
-      },
-      "changes": [],
-      "bringRate": 0.909,
-      "leadRate": 0.46
-     },
-     {
-      "entryId": "dragonite",
-      "set": {
-       "item": "Rocky Helmet",
-       "ability": "Multiscale",
-       "nature": "Jolly",
-       "moves": [
-        "Dragon Dance",
-        "Earthquake",
-        "Outrage",
-        "Thunder Punch"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "atk": 32,
-        "spe": 32
-       }
-      },
-      "changes": [
-       "Moves: Iron Head → Thunder Punch"
-      ],
-      "bringRate": 0.576,
-      "leadRate": 0.125
-     },
-     {
-      "entryId": "slowbro",
-      "set": {
-       "item": "Leftovers",
-       "ability": "Regenerator",
-       "nature": "Calm",
-       "moves": [
-        "Calm Mind",
-        "Psyshock",
-        "Scald",
-        "Slack Off"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "def": 2,
-        "spd": 32
-       }
-      },
-      "changes": [
-       "Item: Sitrus Berry → Leftovers"
-      ],
-      "bringRate": 0.014,
-      "leadRate": 0.007
-     },
-     {
-      "entryId": "archaludon",
-      "set": {
-       "item": "Choice Scarf",
-       "ability": "Sturdy",
-       "nature": "Modest",
-       "moves": [
-        "Dragon Pulse",
-        "Flash Cannon",
-        "Dark Pulse",
-        "Thunderbolt"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.715,
-      "leadRate": 0.208
-     },
-     {
-      "entryId": "delphox-delphoxite",
-      "set": {
-       "item": "Delphoxite",
-       "ability": "Blaze",
-       "nature": "Modest",
-       "moves": [
-        "Flamethrower",
-        "Psychic",
-        "Focus Blast",
-        "Hypnosis"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.414,
-      "leadRate": 0.113
-     },
-     {
-      "entryId": "hydreigon",
-      "set": {
-       "item": "Life Orb",
-       "ability": "Levitate",
-       "nature": "Modest",
-       "moves": [
-        "Dark Pulse",
-        "Draco Meteor",
-        "Flamethrower",
-        "Flash Cannon"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [
-       "Moves: Fire Blast → Flamethrower"
-      ],
-      "bringRate": 0.372,
-      "leadRate": 0.087
-     }
-    ],
-    "threats": [
-     {
-      "entryId": "dragonite-dragoninite",
-      "games": 144,
-      "winRate": 0.396
-     },
-     {
-      "entryId": "corviknight",
-      "games": 113,
-      "winRate": 0.46
-     },
-     {
-      "entryId": "umbreon",
-      "games": 144,
-      "winRate": 0.479
-     },
-     {
-      "entryId": "hydreigon",
-      "games": 200,
-      "winRate": 0.48
-     },
-     {
-      "entryId": "lucario-lucarionitez",
-      "games": 159,
-      "winRate": 0.516
-     },
-     {
-      "entryId": "primarina",
-      "games": 954,
-      "winRate": 0.528
-     },
-     {
-      "entryId": "garchomp-garchompitez",
-      "games": 180,
-      "winRate": 0.533
-     },
-     {
-      "entryId": "salamence-salamencite",
-      "games": 155,
-      "winRate": 0.594
-     }
-    ]
-   },
-   {
     "kind": "builder",
-    "winRate": 0.6556,
-    "se": 0.0153,
+    "winRate": 0.6792,
+    "se": 0.0159,
     "measure": "preview game",
     "members": [
      {
-      "entryId": "golisopod-golisopite",
+      "entryId": "baxcalibur",
       "set": {
-       "item": "Golisopite",
-       "ability": "Emergency Exit",
+       "item": "Focus Sash",
+       "ability": "Thermal Exchange",
        "nature": "Adamant",
        "moves": [
-        "Swords Dance",
-        "Aqua Jet",
-        "Leech Life",
-        "Sucker Punch"
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
        ],
        "statPoints": {
-        "hp": 32,
+        "hp": 2,
         "atk": 32,
-        "def": 2
+        "spe": 32
        }
-      },
-      "changes": [],
-      "bringRate": 0.901,
-      "leadRate": 0.433
+      }
      },
      {
       "entryId": "dragonite",
       "set": {
-       "item": "Rocky Helmet",
+       "item": "Bright Powder",
        "ability": "Multiscale",
-       "nature": "Jolly",
-       "moves": [
-        "Dragon Dance",
-        "Earthquake",
-        "Outrage",
-        "Iron Head"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "atk": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.519,
-      "leadRate": 0.122
-     },
-     {
-      "entryId": "annihilape",
-      "set": {
-       "item": "Sitrus Berry",
-       "ability": "Defiant",
-       "nature": "Impish",
-       "moves": [
-        "Bulk Up",
-        "Drain Punch",
-        "Rage Fist",
-        "Vacuum Wave"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "def": 32,
-        "spd": 2
-       }
-      },
-      "changes": [],
-      "bringRate": 0.26,
-      "leadRate": 0.084
-     },
-     {
-      "entryId": "archaludon",
-      "set": {
-       "item": "Choice Scarf",
-       "ability": "Sturdy",
-       "nature": "Modest",
-       "moves": [
-        "Dragon Pulse",
-        "Flash Cannon",
-        "Dark Pulse",
-        "Thunderbolt"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.67,
-      "leadRate": 0.187
-     },
-     {
-      "entryId": "delphox-delphoxite",
-      "set": {
-       "item": "Delphoxite",
-       "ability": "Blaze",
-       "nature": "Modest",
-       "moves": [
-        "Flamethrower",
-        "Psychic",
-        "Focus Blast",
-        "Hypnosis"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.37,
-      "leadRate": 0.107
-     },
-     {
-      "entryId": "hydreigon",
-      "set": {
-       "item": "Life Orb",
-       "ability": "Levitate",
-       "nature": "Modest",
-       "moves": [
-        "Dark Pulse",
-        "Draco Meteor",
-        "Fire Blast",
-        "Flash Cannon"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.279,
-      "leadRate": 0.067
-     }
-    ],
-    "threats": [
-     {
-      "entryId": "dragonite-dragoninite",
-      "games": 144,
-      "winRate": 0.403
-     },
-     {
-      "entryId": "charizard",
-      "games": 192,
-      "winRate": 0.458
-     },
-     {
-      "entryId": "umbreon",
-      "games": 150,
-      "winRate": 0.467
-     },
-     {
-      "entryId": "volcarona",
-      "games": 128,
-      "winRate": 0.477
-     },
-     {
-      "entryId": "salamence-salamencite",
-      "games": 207,
-      "winRate": 0.536
-     },
-     {
-      "entryId": "primarina",
-      "games": 1112,
-      "winRate": 0.542
-     },
-     {
-      "entryId": "aegislash",
-      "games": 122,
-      "winRate": 0.557
-     },
-     {
-      "entryId": "hippowdon",
-      "games": 228,
-      "winRate": 0.601
-     }
-    ]
-   },
-   {
-    "kind": "builder",
-    "winRate": 0.6371,
-    "se": 0.0152,
-    "measure": "preview game",
-    "members": [
-     {
-      "entryId": "golisopod-golisopite",
-      "set": {
-       "item": "Golisopite",
-       "ability": "Emergency Exit",
        "nature": "Adamant",
        "moves": [
-        "Swords Dance",
-        "Aqua Jet",
-        "Leech Life",
-        "Sucker Punch"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "atk": 32,
-        "def": 2
-       }
-      },
-      "changes": [],
-      "bringRate": 0.934,
-      "leadRate": 0.477
-     },
-     {
-      "entryId": "dragonite",
-      "set": {
-       "item": "Rocky Helmet",
-       "ability": "Multiscale",
-       "nature": "Jolly",
-       "moves": [
         "Dragon Dance",
         "Earthquake",
         "Outrage",
-        "Iron Head"
+        "Fire Punch"
        ],
        "statPoints": {
         "hp": 2,
         "atk": 32,
         "spe": 32
        }
-      },
-      "changes": [],
-      "bringRate": 0.55,
-      "leadRate": 0.139
-     },
-     {
-      "entryId": "annihilape",
-      "set": {
-       "item": "Sitrus Berry",
-       "ability": "Defiant",
-       "nature": "Impish",
-       "moves": [
-        "Bulk Up",
-        "Drain Punch",
-        "Rage Fist",
-        "Vacuum Wave"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "def": 32,
-        "spd": 2
-       }
-      },
-      "changes": [],
-      "bringRate": 0.287,
-      "leadRate": 0.1
-     },
-     {
-      "entryId": "greninja-greninjite",
-      "set": {
-       "item": "Greninjite",
-       "ability": "Protean",
-       "nature": "Modest",
-       "moves": [
-        "Surf",
-        "Dark Pulse",
-        "Ice Beam",
-        "Sludge Wave"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.706,
-      "leadRate": 0.166
-     },
-     {
-      "entryId": "hydreigon",
-      "set": {
-       "item": "Life Orb",
-       "ability": "Levitate",
-       "nature": "Modest",
-       "moves": [
-        "Dark Pulse",
-        "Draco Meteor",
-        "Fire Blast",
-        "Flash Cannon"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.371,
-      "leadRate": 0.071
-     },
-     {
-      "entryId": "typhlosionhisui",
-      "set": {
-       "item": "Choice Scarf",
-       "ability": "Blaze",
-       "nature": "Modest",
-       "moves": [
-        "Eruption",
-        "Shadow Ball",
-        "Focus Blast",
-        "Extrasensory"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      },
-      "changes": [],
-      "bringRate": 0.152,
-      "leadRate": 0.048
-     }
-    ],
-    "threats": [
-     {
-      "entryId": "hydreigon",
-      "games": 136,
-      "winRate": 0.426
-     },
-     {
-      "entryId": "charizard",
-      "games": 200,
-      "winRate": 0.51
-     },
-     {
-      "entryId": "salamence-salamencite",
-      "games": 197,
-      "winRate": 0.528
-     },
-     {
-      "entryId": "umbreon",
-      "games": 229,
-      "winRate": 0.537
-     },
-     {
-      "entryId": "lucario-lucarionitez",
-      "games": 324,
-      "winRate": 0.537
-     },
-     {
-      "entryId": "primarina",
-      "games": 1248,
-      "winRate": 0.558
+      }
      },
      {
       "entryId": "mimikyu",
-      "games": 816,
-      "winRate": 0.613
+      "set": {
+       "item": "Leftovers",
+       "ability": "Disguise",
+       "nature": "Adamant",
+       "moves": [
+        "Play Rough",
+        "Phantom Force",
+        "Shadow Sneak",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "indeedee",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Psychic Surge",
+       "nature": "Modest",
+       "moves": [
+        "Calm Mind",
+        "Expanding Force",
+        "Hyper Voice",
+        "Mystical Fire"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     }
+    ],
+    "threats": [
+     {
+      "entryId": "corviknight",
+      "games": 176,
+      "winRate": 0.352
+     },
+     {
+      "entryId": "salamence",
+      "games": 296,
+      "winRate": 0.551
+     },
+     {
+      "entryId": "scizor",
+      "games": 159,
+      "winRate": 0.553
+     },
+     {
+      "entryId": "dragonite",
+      "games": 107,
+      "winRate": 0.561
      },
      {
       "entryId": "charizard-charizarditey",
-      "games": 315,
-      "winRate": 0.619
+      "games": 447,
+      "winRate": 0.562
+     },
+     {
+      "entryId": "salamence-salamencite",
+      "games": 218,
+      "winRate": 0.578
+     },
+     {
+      "entryId": "indeedee",
+      "games": 168,
+      "winRate": 0.601
+     },
+     {
+      "entryId": "primarina",
+      "games": 1189,
+      "winRate": 0.603
+     }
+    ]
+   },
+   {
+    "kind": "searched",
+    "winRate": 0.664,
+    "se": 0.0157,
+    "measure": "preview game",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.551,
+      "leadRate": 0.128
+     },
+     {
+      "entryId": "dragonite",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Multiscale",
+       "nature": "Adamant",
+       "moves": [
+        "Dragon Dance",
+        "Earthquake",
+        "Outrage",
+        "Fire Punch"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.384,
+      "leadRate": 0.109
+     },
+     {
+      "entryId": "arcaninehisui",
+      "set": {
+       "item": "Life Orb",
+       "ability": "Rock Head",
+       "nature": "Jolly",
+       "moves": [
+        "Extreme Speed",
+        "Flare Blitz",
+        "Head Smash",
+        "Bite"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      },
+      "changes": [
+       "Moves: Close Combat → Bite"
+      ],
+      "bringRate": 0.162,
+      "leadRate": 0.031
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      },
+      "changes": [],
+      "bringRate": 0.963,
+      "leadRate": 0.43
+     },
+     {
+      "entryId": "indeedee",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Psychic Surge",
+       "nature": "Modest",
+       "moves": [
+        "Calm Mind",
+        "Expanding Force",
+        "Hyper Voice",
+        "Mystical Fire"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.412,
+      "leadRate": 0.143
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      },
+      "changes": [],
+      "bringRate": 0.528,
+      "leadRate": 0.161
+     }
+    ],
+    "threats": [
+     {
+      "entryId": "umbreon",
+      "games": 139,
+      "winRate": 0.338
+     },
+     {
+      "entryId": "ceruledge",
+      "games": 128,
+      "winRate": 0.375
+     },
+     {
+      "entryId": "salamence",
+      "games": 384,
+      "winRate": 0.456
+     },
+     {
+      "entryId": "dragonite-dragoninite",
+      "games": 134,
+      "winRate": 0.59
+     },
+     {
+      "entryId": "salamence-salamencite",
+      "games": 239,
+      "winRate": 0.607
+     },
+     {
+      "entryId": "dragonite",
+      "games": 128,
+      "winRate": 0.609
+     },
+     {
+      "entryId": "lucario-lucarionitez",
+      "games": 380,
+      "winRate": 0.629
+     },
+     {
+      "entryId": "indeedee",
+      "games": 128,
+      "winRate": 0.633
+     }
+    ]
+   },
+   {
+    "kind": "builder",
+    "winRate": 0.6485,
+    "se": 0.0159,
+    "measure": "preview game",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "mimikyu",
+      "set": {
+       "item": "Leftovers",
+       "ability": "Disguise",
+       "nature": "Adamant",
+       "moves": [
+        "Play Rough",
+        "Phantom Force",
+        "Shadow Sneak",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "salamence",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Intimidate",
+       "nature": "Modest",
+       "moves": [
+        "Flamethrower",
+        "Air Slash",
+        "Draco Meteor",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "threats": []
+   },
+   {
+    "kind": "searched",
+    "winRate": 0.6164,
+    "se": 0.0172,
+    "measure": "preview game",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.554,
+      "leadRate": 0.138
+     },
+     {
+      "entryId": "bellibolt",
+      "set": {
+       "item": "Magnet",
+       "ability": "Electromorphosis",
+       "nature": "Modest",
+       "moves": [
+        "Slack Off",
+        "Sucker Punch",
+        "Thunderbolt",
+        "Muddy Water"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "spa": 32,
+        "spd": 2
+       }
+      },
+      "changes": [],
+      "bringRate": 0.43,
+      "leadRate": 0.107
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      },
+      "changes": [],
+      "bringRate": 0.97,
+      "leadRate": 0.418
+     },
+     {
+      "entryId": "goodrahisui",
+      "set": {
+       "item": "Life Orb",
+       "ability": "Gooey",
+       "nature": "Modest",
+       "moves": [
+        "Dragon Pulse",
+        "Heavy Slam",
+        "Fire Blast",
+        "Feint"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.071,
+      "leadRate": 0.012
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      },
+      "changes": [],
+      "bringRate": 0.526,
+      "leadRate": 0.197
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      },
+      "changes": [],
+      "bringRate": 0.449,
+      "leadRate": 0.128
+     }
+    ],
+    "threats": [
+     {
+      "entryId": "charizard-charizarditey",
+      "games": 208,
+      "winRate": 0.433
+     },
+     {
+      "entryId": "charizard",
+      "games": 129,
+      "winRate": 0.512
+     },
+     {
+      "entryId": "salamence",
+      "games": 384,
+      "winRate": 0.565
+     },
+     {
+      "entryId": "garchomp-garchompitez",
+      "games": 230,
+      "winRate": 0.565
+     },
+     {
+      "entryId": "pelipper",
+      "games": 244,
+      "winRate": 0.602
+     },
+     {
+      "entryId": "primarina",
+      "games": 1081,
+      "winRate": 0.605
+     },
+     {
+      "entryId": "salamence-salamencite",
+      "games": 426,
+      "winRate": 0.608
+     },
+     {
+      "entryId": "swampert-swampertite",
+      "games": 136,
+      "winRate": 0.618
      }
     ]
    }
   ]
  },
  "equilibrium": {
-  "converged": false,
-  "reason": "",
-  "eps": 0.02,
-  "population": 14,
+  "converged": true,
+  "reason": "best response gains -5.2 pp < eps",
+  "eps": 0.01,
+  "population": 7,
   "teams": [
    {
-    "weight": 0.7499,
-    "label": "br6",
+    "weight": 0.9999,
+    "label": "builder",
     "members": [
      {
-      "entryId": "lucario-lucarionitez",
+      "entryId": "baxcalibur",
       "set": {
-       "item": "Lucarionite Z",
-       "ability": "Justified",
-       "nature": "Timid",
+       "item": "Focus Sash",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
        "moves": [
-        "Psychic",
-        "Flash Cannon",
-        "Focus Blast",
-        "Dark Pulse"
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
        ],
        "statPoints": {
         "hp": 2,
-        "spa": 32,
+        "atk": 32,
         "spe": 32
        }
       }
@@ -594,14 +695,14 @@
      {
       "entryId": "dragonite",
       "set": {
-       "item": "Rocky Helmet",
+       "item": "Bright Powder",
        "ability": "Multiscale",
-       "nature": "Jolly",
+       "nature": "Adamant",
        "moves": [
         "Dragon Dance",
         "Earthquake",
         "Outrage",
-        "Iron Head"
+        "Fire Punch"
        ],
        "statPoints": {
         "hp": 2,
@@ -611,88 +712,24 @@
       }
      },
      {
-      "entryId": "sneasler",
+      "entryId": "mimikyu",
       "set": {
-       "item": "Focus Sash",
-       "ability": "Unburden",
+       "item": "Leftovers",
+       "ability": "Disguise",
        "nature": "Adamant",
        "moves": [
-        "Quick Attack",
-        "Close Combat",
-        "Gunk Shot",
-        "Throat Chop"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "atk": 32,
-        "spe": 32
-       }
-      }
-     },
-     {
-      "entryId": "archaludon",
-      "set": {
-       "item": "Choice Scarf",
-       "ability": "Sturdy",
-       "nature": "Modest",
-       "moves": [
-        "Dragon Pulse",
-        "Flash Cannon",
-        "Dark Pulse",
-        "Thunderbolt"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      }
-     },
-     {
-      "entryId": "primarina",
-      "set": {
-       "item": "Bright Powder",
-       "ability": "Torrent",
-       "nature": "Modest",
-       "moves": [
-        "Moonblast",
-        "Sparkling Aria",
-        "Aqua Jet",
-        "Calm Mind"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      }
-     },
-     {
-      "entryId": "skeledirge",
-      "set": {
-       "item": "Quick Claw",
-       "ability": "Unaware",
-       "nature": "Bold",
-       "moves": [
-        "Slack Off",
-        "Will-O-Wisp",
-        "Torch Song",
-        "Shadow Ball"
+        "Play Rough",
+        "Phantom Force",
+        "Shadow Sneak",
+        "Swords Dance"
        ],
        "statPoints": {
         "hp": 32,
-        "def": 32,
-        "spd": 2
+        "atk": 32,
+        "def": 2
        }
       }
-     }
-    ],
-    "vsMix": 0.5
-   },
-   {
-    "weight": 0.2457,
-    "label": "br1",
-    "members": [
+     },
      {
       "entryId": "golisopod-golisopite",
       "set": {
@@ -713,54 +750,16 @@
       }
      },
      {
-      "entryId": "dragonite",
-      "set": {
-       "item": "Rocky Helmet",
-       "ability": "Multiscale",
-       "nature": "Jolly",
-       "moves": [
-        "Dragon Dance",
-        "Earthquake",
-        "Outrage",
-        "Iron Head"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "atk": 32,
-        "spe": 32
-       }
-      }
-     },
-     {
-      "entryId": "pidgeot-pidgeotite",
-      "set": {
-       "item": "Pidgeotite",
-       "ability": "Tangled Feet",
-       "nature": "Timid",
-       "moves": [
-        "Hurricane",
-        "Heat Wave",
-        "Quick Attack",
-        "Roost"
-       ],
-       "statPoints": {
-        "hp": 2,
-        "spa": 32,
-        "spe": 32
-       }
-      }
-     },
-     {
-      "entryId": "floetteeternal",
+      "entryId": "indeedee",
       "set": {
        "item": "Choice Scarf",
-       "ability": "Flower Veil",
+       "ability": "Psychic Surge",
        "nature": "Modest",
        "moves": [
-        "Moonblast",
-        "Psychic",
-        "Energy Ball",
-        "Chilling Water"
+        "Calm Mind",
+        "Expanding Force",
+        "Hyper Voice",
+        "Mystical Fire"
        ],
        "statPoints": {
         "hp": 2,
@@ -770,35 +769,16 @@
       }
      },
      {
-      "entryId": "azumarill",
+      "entryId": "annihilape",
       "set": {
        "item": "Sitrus Berry",
-       "ability": "Huge Power",
-       "nature": "Adamant",
+       "ability": "Defiant",
+       "nature": "Impish",
        "moves": [
-        "Aqua Jet",
-        "Knock Off",
-        "Belly Drum",
-        "Play Rough"
-       ],
-       "statPoints": {
-        "hp": 32,
-        "atk": 32,
-        "def": 2
-       }
-      }
-     },
-     {
-      "entryId": "clefable",
-      "set": {
-       "item": "Bright Powder",
-       "ability": "Unaware",
-       "nature": "Bold",
-       "moves": [
-        "Cosmic Power",
-        "Moonblast",
-        "Moonlight",
-        "Calm Mind"
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
        ],
        "statPoints": {
         "hp": 32,
