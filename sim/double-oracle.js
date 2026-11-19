@@ -110,14 +110,26 @@ async function main() {
 	};
 
 	// seed population: the Team Builder's teams (with and without its Mega preferences)
-	const seeds = await builderTeams(results, Number(arg('seeds', 6)));
+	// --resume earlier-run.json: continue from its population and payoff matrix (saved at each iteration's start),
+	// e.g. after a Spot reclaim; it must come from the same --results
+	const resumed = arg('resume') && fs.existsSync(path.resolve(arg('resume'))) ? JSON.parse(fs.readFileSync(path.resolve(arg('resume')), 'utf8')) : null;
+	if (resumed && resumed.results !== results.meta.generatedAt) throw new Error('--resume file is from other results');
 	const candidates = [...results.entries].sort((a, b) => b.rating - a.rating).slice(0, Number(arg('candidates', 80))).map(e => e.id);
 	let ts = null;
-	for (const t of seeds) { await addTeam(t, 'builder'); }
-	log(`seeded ${pop.length} builder teams`);
+	let firstIt = 0;
+	if (resumed) {
+		for (const p of resumed.population) pop.push({team: p.team, sets: p.sets, label: p.label});
+		resumed.matrix.forEach((r, i) => { M[i] = r.slice(); });
+		firstIt = resumed.iteration || 0;
+		log(`resumed ${pop.length} teams at iteration ${firstIt}`);
+	} else {
+		const seeds = await builderTeams(results, Number(arg('seeds', 6)));
+		for (const t of seeds) { await addTeam(t, 'builder'); }
+		log(`seeded ${pop.length} builder teams`);
+	}
 	const iters = Number(arg('iters', 15));
 	const scale = Number(arg('scale', 1));
-	for (let it = 0; it < iters; it++) {
+	for (let it = firstIt; it < iters; it++) {
 		const mix = solveMix();
 		const support = pop.map((p, i) => ({i, w: mix.x[i]})).filter(s => s.w > 0.01).sort((a, b) => b.w - a.w);
 		log(`iter ${it}: population ${pop.length}, support ${support.map(s => `#${s.i}:${(100 * s.w).toFixed(0)}%`).join(' ')}`);
