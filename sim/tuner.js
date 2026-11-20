@@ -27,7 +27,7 @@ const {execFile, spawn} = require('child_process');
 const {pathToFileURL} = require('url');
 
 const ROOT = path.join(__dirname, '..');
-const ALGORITHM = 4; // 4: heuristic2 search, rollout4all status checks and validation. Bump when sim/refine.js changes what a tuning produces, to retire cached results
+const ALGORITHM = 5; // 5: no Choice sets with setup / recovery / Protect (sets.choiceWaste). 4: heuristic2 search, rollout4all status checks and validation. Bump when sim/refine.js changes what a tuning produces, to retire cached results
 const BUDGET = process.env.TUNE_BUDGET || 'rigorous';
 const LAMBDA_DAILY_BATTLES = Number(process.env.TUNE_LAMBDA_DAILY_BATTLES) || 10e6;
 const LAMBDA_TEAMS_AT_ONCE = 10;

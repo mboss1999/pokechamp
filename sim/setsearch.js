@@ -121,6 +121,7 @@ function alternatives(entry, set, dim, pool) {
 		const have = set.moves.map(m => dex.moves.get(m));
 		for (const m of pool) {
 			if (have.some(h => h.id === m.id)) continue;
+			if (S.isChoice(set.item) && S.wastedOnChoice(m)) continue;
 			if (have.some((h, j) => j !== dim && sameRole(h, m))) continue;
 			const moves = set.moves.slice();
 			moves[dim] = m.name;
@@ -130,7 +131,8 @@ function alternatives(entry, set, dim, pool) {
 		if (entry.megaItem) return out;
 		const types = new Set(set.moves.map(m => dex.moves.get(m)).filter(m => m.category !== 'Status').map(m => m.type));
 		const typeItems = Object.entries(S.TYPE_ITEM || {}).filter(([t]) => types.has(t)).map(([, i]) => i);
-		for (const item of [...ITEMS, ...typeItems]) if (item !== set.item) push({...set, item});
+		const wastes = set.moves.some(m => S.wastedOnChoice(dex.moves.get(m)));
+		for (const item of [...ITEMS, ...typeItems]) if (item !== set.item && !(wastes && S.isChoice(item))) push({...set, item});
 	} else if (dim === 'ability') {
 		for (const a of new Set(Object.values(dex.species.get(entry.species).abilities))) if (a !== set.ability) push({...set, ability: a});
 	} else if (dim === 'spread') {
@@ -228,6 +230,32 @@ class SetSearch {
 			history.push({round, dim, change: describeDiff(from, to), diff: +conf.diff.toFixed(4), se: +conf.se.toFixed(4), agent});
 			this.log(`${entry.id}: ${describeDiff(from, to)} (${(100 * conf.diff).toFixed(1)} ± ${(100 * conf.se).toFixed(1)}${agent !== this.agent ? `, ${agent}` : ''})`);
 		};
+		// A start that wastes a move under its Choice item (Choice Scarf + Calm Mind) is repaired first: one race
+		// between replacing that move and dropping the Choice item, and the best of them is taken even if it does not
+		// beat the start (the start is not a legal outcome). The descent's own alternatives never recreate it.
+		let base = start;
+		const waste = S.choiceWaste(cur);
+		if (waste.length) {
+			const slot = cur.moves.indexOf(waste[0]);
+			const moveAlts = alternatives(entry, cur, slot, pool), itemAlts = alternatives(entry, cur, 'item', pool);
+			if (moveAlts.length || itemAlts.length) {
+				// the fast pilot screens; the strong pilot (it values the kept status move fairly) picks among the
+				// top replacement moves and the top non-Choice items
+				const scr = async c => {
+					if (!c.length) return [];
+					const w = await this.play([cur, ...c], this.contexts(rng, cur, z.screen));
+					return c.map((set, k) => ({set, d: mean(w[k + 1])})).sort((a, b) => b.d - a.d).map(x => x.set);
+				};
+				const [m, i] = [await scr(moveAlts), await scr(itemAlts)];
+				const finalists = [...m.slice(0, z.keep), ...i.slice(0, 2)];
+				const r = await this.race(rng, cur, finalists, {agent: strong || this.agent, screen: false,
+					size: strong ? strongSize : z});
+				const pick = r.refined[0].set;
+				note('repair', slot, cur, pick, r.refined[0], strong || this.agent);
+				cur = pick;
+				base = pick;
+			}
+		}
 		let slotRaces = [];
 		for (let round = 0; round < this.rounds; round++) {
 			let changed = false;
@@ -292,15 +320,15 @@ class SetSearch {
 			}
 		}
 		let check = null;
-		if (strong && history.length) {
+		if (strong && history.length && cur.key !== base.key) {
 			const ctxs = this.contexts(rng, cur, z.check);
-			const w = await this.play([start, cur], ctxs, strong);
+			const w = await this.play([base, cur], ctxs, strong);
 			check = paired(w[1], w[0]);
 			check = {agent: strong, diff: +check.diff.toFixed(4), se: +check.se.toFixed(4), n: check.n};
 			if (check.diff + 1.96 * check.se < 0) {
 				this.log(`${entry.id}: ${strong} finds the searched set worse (${(100 * check.diff).toFixed(1)} ± ${(100 * check.se).toFixed(1)}); keeping the start`);
 				check.reverted = true;
-				cur = {...start, key: setKey(start)};
+				cur = {...base, key: setKey(base)};
 			}
 		}
 		// alternatives with other items (Item Clause): the best refined items from the last item race

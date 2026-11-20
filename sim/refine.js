@@ -301,6 +301,8 @@ async function refineTeam(pool, results, team, opts = {}) {
 				if (seen.has(s.key) || (s.item && otherItems.has(s.item))) continue;
 				// never add a second attack doing the same job as one already there (Dragon Darts + Dragon Claw)
 				if (redundantPairs(s) > dead) continue;
+				// nor a move a Choice item would waste (Choice Scarf + Calm Mind)
+				if (S.choiceWaste(s).length) continue;
 				seen.add(s.key);
 				cands.push(s);
 				if (cands.length >= CANDIDATES) break;

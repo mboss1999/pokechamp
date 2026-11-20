@@ -245,6 +245,7 @@ function candidateSets(entry, opts = {}) {
 		const key = JSON.stringify([set.ability, set.item, set.spread, [...set.moves].sort()]);
 		if (out.some(s => s.key === key)) return;
 		if (set.moves.length < 2) return;
+		if (choiceWaste(set).length) return;
 		const problems = F.validateSet(JSON.parse(JSON.stringify(set)));
 		if (problems) return;
 		set.key = key;
@@ -361,6 +362,23 @@ function candidateSets(entry, opts = {}) {
 	return out.slice(0, limit);
 }
 
+// Moves that only pay off if the user keeps acting afterwards (setup, recovery, Substitute, Protect): under a Choice
+// item they lock the holder into a move that does nothing more, so a Choice set must not carry them. One-shot moves
+// that work before a switch (status, hazards, Taunt, screens, pivots, Destiny Bond, Trick, Wish) stay allowed.
+const CHOICE_WASTE = new Set(['substitute', 'rest', 'focusenergy', 'bellydrum', 'stockpile', 'swallow', 'curse',
+	'strengthsap', 'painsplit', 'ingrain', 'aquaring', 'magnetrise', 'laserfocus', 'charge', 'autotomize', 'minimize',
+	'defensecurl', 'doubleteam', 'acupressure', 'shoreup', 'howl', 'milkdrink', 'moonlight', 'morningsun', 'synthesis',
+	'lifedew', 'tidyup', 'stuffcheeks', 'powershift', 'victorydance', 'takeheart', 'burningbulwark', 'silktrap',
+	'obstruct', 'junglehealing', 'lunarblessing']);
+const wastedOnChoice = m => m.category === 'Status' &&
+	(CHOICE_WASTE.has(m.id) || !!m.stallingMove || (m.target === 'self' && (!!m.boosts || !!m.heal)));
+const isChoice = item => /^choice /i.test(item || '');
+/** Moves of `set` that a Choice item would waste (none unless it holds one). */
+function choiceWaste(set) {
+	if (!isChoice(set.item)) return [];
+	return set.moves.map(m => dex.moves.get(m)).filter(wastedOnChoice).map(m => m.name);
+}
+
 const ROLE_STYLE = {
 	'Fast Attacker': {spread: 'fast', items: ['Life Orb', 'Focus Sash', 'Choice Scarf']},
 	'Wallbreaker': {spread: 'strong', items: ['Life Orb', 'Expert Belt']},
@@ -435,6 +453,7 @@ function neighbours(entry, set, rng) {
 	const tryAdd = s => {
 		s.key = JSON.stringify([s.ability, s.item, s.spread, [...s.moves].sort()]);
 		if (s.key === set.key || out.some(o => o.key === s.key)) return;
+		if (choiceWaste(s).length) return;
 		if (F.validateSet(JSON.parse(JSON.stringify(s)))) return;
 		out.push(s);
 	};
@@ -475,4 +494,4 @@ function neighbours(entry, set, rng) {
 	return out;
 }
 
-module.exports = {rosterEntries, candidateSets, neighbours, SPREADS, TYPE_ITEM, curatedRoles, ROLE, BANNED_ATTACKS, SPECIAL_POWER, attackPower, effectiveness};
+module.exports = {choiceWaste, wastedOnChoice, isChoice, rosterEntries, candidateSets, neighbours, SPREADS, TYPE_ITEM, curatedRoles, ROLE, BANNED_ATTACKS, SPECIAL_POWER, attackPower, effectiveness};
