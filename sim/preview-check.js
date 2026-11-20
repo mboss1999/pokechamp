@@ -6,6 +6,7 @@
 //
 //   node sim/preview-check.js --teams out/strongest/ladder-search.json --field ladder --ingame ... --chaos ... \
 //     --replays ... --opponents 100 --pool lambda --out out/strongest/preview-check.json
+//   --keep-variants keeps teams with the same species but different sets (e.g. one set swapped)
 
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +22,8 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 	const search = JSON.parse(fs.readFileSync(path.resolve(arg('teams')), 'utf8'));
 	const seen = new Set();
 	const teams = search.teams.slice().sort((a, b) => b.winRate - a.winRate).filter(t => {
-		const k = t.sets.map(s => s.species).sort().join();
+		// --keep-variants: same species with different sets count as different teams (e.g. one set swapped)
+		const k = argv.includes('--keep-variants') ? JSON.stringify(t.sets) : t.sets.map(s => s.species).sort().join();
 		if (seen.has(k)) return false;
 		seen.add(k); return true;
 	}).slice(0, Number(arg('top', 4)));
