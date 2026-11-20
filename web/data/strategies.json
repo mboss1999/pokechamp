@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-19T18:19:21.341Z",
+ "generatedAt": "2026-11-20T01:51:43.136Z",
  "results": "2026-11-19T10:11:33.438Z",
  "ladder": {
   "fieldInfo": "Against what Champions ranked players bring now: in-game ranked Singles data (championsbattledata.com, 2026-11-16), Showdown usage stats (Oct 2026, 1760+) and 248 teams from top-100 players' replays, 150 opponents, both sides choosing their three from the 1v1 matrix. The Team Builder's best team (67.9%) is ahead of every searched change; the closest, Arcanine-Hisui for Mimikyu, scores 66.4%.",
@@ -664,14 +664,136 @@
   ]
  },
  "equilibrium": {
-  "converged": true,
-  "reason": "best response gains -5.2 pp < eps",
+  "converged": false,
+  "reason": "",
   "eps": 0.01,
-  "population": 7,
+  "population": 33,
   "teams": [
    {
-    "weight": 0.9999,
-    "label": "builder",
+    "weight": 0.3906,
+    "label": "br12b",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "primarina",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Torrent",
+       "nature": "Quiet",
+       "moves": [
+        "Moonblast",
+        "Surf",
+        "Aqua Jet",
+        "Calm Mind"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "spa": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "kingambit",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Supreme Overlord",
+       "nature": "Adamant",
+       "moves": [
+        "Sucker Punch",
+        "Low Kick",
+        "Iron Head",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "toxapex",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Regenerator",
+       "nature": "Bold",
+       "moves": [
+        "Surf",
+        "Toxic",
+        "Iron Defense",
+        "Recover"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "dragonite-dragoninite",
+      "set": {
+       "item": "Dragoninite",
+       "ability": "Multiscale",
+       "nature": "Modest",
+       "moves": [
+        "Flamethrower",
+        "Thunderbolt",
+        "Dragon Pulse",
+        "Roost"
+       ],
+       "statPoints": {
+        "hp": 1,
+        "def": 1,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5003
+   },
+   {
+    "weight": 0.2688,
+    "label": "br4b",
     "members": [
      {
       "entryId": "baxcalibur",
@@ -712,16 +834,500 @@
       }
      },
      {
-      "entryId": "mimikyu",
+      "entryId": "lucario-lucarionitez",
       "set": {
-       "item": "Leftovers",
-       "ability": "Disguise",
+       "item": "Lucarionite Z",
+       "ability": "Inner Focus",
+       "nature": "Timid",
+       "moves": [
+        "Aura Sphere",
+        "Dark Pulse",
+        "Flash Cannon",
+        "Nasty Plot"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "houndstone",
+      "set": {
+       "item": "Spell Tag",
+       "ability": "Fluffy",
        "nature": "Adamant",
        "moves": [
-        "Play Rough",
-        "Phantom Force",
+        "Body Press",
+        "Last Respects",
         "Shadow Sneak",
-        "Swords Dance"
+        "Will-O-Wisp"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "indeedee",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Psychic Surge",
+       "nature": "Modest",
+       "moves": [
+        "Calm Mind",
+        "Expanding Force",
+        "Hyper Voice",
+        "Mystical Fire"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "florges",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Flower Veil",
+       "nature": "Bold",
+       "moves": [
+        "Calm Mind",
+        "Synthesis",
+        "Moonblast",
+        "Giga Drain"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5001
+   },
+   {
+    "weight": 0.0973,
+    "label": "br14c",
+    "members": [
+     {
+      "entryId": "raichu-raichunitey",
+      "set": {
+       "item": "Raichunite Y",
+       "ability": "Lightning Rod",
+       "nature": "Timid",
+       "moves": [
+        "Zap Cannon",
+        "Focus Blast",
+        "Grass Knot",
+        "Fake Out"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "azumarill",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Huge Power",
+       "nature": "Adamant",
+       "moves": [
+        "Aqua Jet",
+        "Liquidation",
+        "Belly Drum",
+        "Play Rough"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "overqwil",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Intimidate",
+       "nature": "Adamant",
+       "moves": [
+        "Gunk Shot",
+        "Crunch",
+        "Aqua Jet",
+        "Haze"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "toxapex",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Regenerator",
+       "nature": "Bold",
+       "moves": [
+        "Surf",
+        "Toxic",
+        "Iron Defense",
+        "Recover"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "maushold",
+      "set": {
+       "item": "Wide Lens",
+       "ability": "Technician",
+       "nature": "Jolly",
+       "moves": [
+        "Population Bomb",
+        "Bite",
+        "Low Kick",
+        "Feint"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5
+   },
+   {
+    "weight": 0.0735,
+    "label": "br8",
+    "members": [
+     {
+      "entryId": "florges",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Flower Veil",
+       "nature": "Bold",
+       "moves": [
+        "Calm Mind",
+        "Synthesis",
+        "Moonblast",
+        "Giga Drain"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "salamence",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Intimidate",
+       "nature": "Modest",
+       "moves": [
+        "Flamethrower",
+        "Air Slash",
+        "Draco Meteor",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "hippowdon",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Sand Stream",
+       "nature": "Impish",
+       "moves": [
+        "Earthquake",
+        "Slack Off",
+        "Stone Edge",
+        "Curse"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "raichu-raichunitey",
+      "set": {
+       "item": "Raichunite Y",
+       "ability": "Lightning Rod",
+       "nature": "Timid",
+       "moves": [
+        "Zap Cannon",
+        "Focus Blast",
+        "Grass Knot",
+        "Fake Out"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5
+   },
+   {
+    "weight": 0.0611,
+    "label": "br13b",
+    "members": [
+     {
+      "entryId": "bellibolt",
+      "set": {
+       "item": "Magnet",
+       "ability": "Electromorphosis",
+       "nature": "Modest",
+       "moves": [
+        "Slack Off",
+        "Sucker Punch",
+        "Thunderbolt",
+        "Muddy Water"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "spa": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "golisopod-golisopite",
+      "set": {
+       "item": "Golisopite",
+       "ability": "Emergency Exit",
+       "nature": "Adamant",
+       "moves": [
+        "Swords Dance",
+        "Aqua Jet",
+        "Leech Life",
+        "Sucker Punch"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "clefable",
+      "set": {
+       "item": "Leftovers",
+       "ability": "Unaware",
+       "nature": "Bold",
+       "moves": [
+        "Moonblast",
+        "Moonlight",
+        "Calm Mind",
+        "Thunder Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 14,
+        "spd": 20
+       }
+      }
+     },
+     {
+      "entryId": "annihilape",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Defiant",
+       "nature": "Impish",
+       "moves": [
+        "Bulk Up",
+        "Drain Punch",
+        "Rage Fist",
+        "Vacuum Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "hippowdon",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Sand Stream",
+       "nature": "Impish",
+       "moves": [
+        "Earthquake",
+        "Slack Off",
+        "Stone Edge",
+        "Curse"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "raichu-raichunitey",
+      "set": {
+       "item": "Raichunite Y",
+       "ability": "Lightning Rod",
+       "nature": "Timid",
+       "moves": [
+        "Zap Cannon",
+        "Focus Blast",
+        "Grass Knot",
+        "Fake Out"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.5
+   },
+   {
+    "weight": 0.0305,
+    "label": "br0",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "dragonite",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Multiscale",
+       "nature": "Adamant",
+       "moves": [
+        "Dragon Dance",
+        "Earthquake",
+        "Outrage",
+        "Fire Punch"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "azumarill",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Huge Power",
+       "nature": "Adamant",
+       "moves": [
+        "Aqua Jet",
+        "Liquidation",
+        "Belly Drum",
+        "Play Rough"
        ],
        "statPoints": {
         "hp": 32,
@@ -788,7 +1394,371 @@
       }
      }
     ],
-    "vsMix": 0.5
+    "vsMix": 0.4988
+   },
+   {
+    "weight": 0.0302,
+    "label": "br11d",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "primarina",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Torrent",
+       "nature": "Quiet",
+       "moves": [
+        "Moonblast",
+        "Surf",
+        "Aqua Jet",
+        "Calm Mind"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "spa": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "kingambit",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Supreme Overlord",
+       "nature": "Adamant",
+       "moves": [
+        "Sucker Punch",
+        "Low Kick",
+        "Iron Head",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "toxapex",
+      "set": {
+       "item": "Rocky Helmet",
+       "ability": "Regenerator",
+       "nature": "Bold",
+       "moves": [
+        "Surf",
+        "Toxic",
+        "Iron Defense",
+        "Recover"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "mawile-mawilite",
+      "set": {
+       "item": "Mawilite",
+       "ability": "Intimidate",
+       "nature": "Adamant",
+       "moves": [
+        "Iron Head",
+        "Play Rough",
+        "Sucker Punch",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.4982
+   },
+   {
+    "weight": 0.0236,
+    "label": "br12",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "gallade",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Sharpness",
+       "nature": "Adamant",
+       "moves": [
+        "Shadow Sneak",
+        "Psycho Cut",
+        "Sacred Sword",
+        "Shadow Claw"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "def": 2
+       }
+      }
+     },
+     {
+      "entryId": "lucario-lucarionitez",
+      "set": {
+       "item": "Lucarionite Z",
+       "ability": "Inner Focus",
+       "nature": "Timid",
+       "moves": [
+        "Aura Sphere",
+        "Dark Pulse",
+        "Flash Cannon",
+        "Nasty Plot"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "goodrahisui",
+      "set": {
+       "item": "Life Orb",
+       "ability": "Gooey",
+       "nature": "Modest",
+       "moves": [
+        "Dragon Pulse",
+        "Heavy Slam",
+        "Fire Blast",
+        "Feint"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "indeedee",
+      "set": {
+       "item": "Choice Scarf",
+       "ability": "Psychic Surge",
+       "nature": "Modest",
+       "moves": [
+        "Calm Mind",
+        "Expanding Force",
+        "Hyper Voice",
+        "Mystical Fire"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "garganacl",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Purifying Salt",
+       "nature": "Impish",
+       "moves": [
+        "Recover",
+        "Salt Cure",
+        "Body Press",
+        "Iron Defense"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 32,
+        "spd": 2
+       }
+      }
+     }
+    ],
+    "vsMix": 0.4994
+   },
+   {
+    "weight": 0.0232,
+    "label": "br13",
+    "members": [
+     {
+      "entryId": "baxcalibur",
+      "set": {
+       "item": "Bright Powder",
+       "ability": "Thermal Exchange",
+       "nature": "Adamant",
+       "moves": [
+        "Glaive Rush",
+        "Ice Shard",
+        "Icicle Crash",
+        "Earthquake"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "primarina",
+      "set": {
+       "item": "Sitrus Berry",
+       "ability": "Torrent",
+       "nature": "Quiet",
+       "moves": [
+        "Moonblast",
+        "Surf",
+        "Aqua Jet",
+        "Calm Mind"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "spa": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "kingambit",
+      "set": {
+       "item": "Quick Claw",
+       "ability": "Supreme Overlord",
+       "nature": "Adamant",
+       "moves": [
+        "Sucker Punch",
+        "Low Kick",
+        "Iron Head",
+        "Swords Dance"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "atk": 32,
+        "spd": 2
+       }
+      }
+     },
+     {
+      "entryId": "clefable",
+      "set": {
+       "item": "Leftovers",
+       "ability": "Unaware",
+       "nature": "Bold",
+       "moves": [
+        "Moonblast",
+        "Moonlight",
+        "Calm Mind",
+        "Thunder Wave"
+       ],
+       "statPoints": {
+        "hp": 32,
+        "def": 14,
+        "spd": 20
+       }
+      }
+     },
+     {
+      "entryId": "dragonite-dragoninite",
+      "set": {
+       "item": "Dragoninite",
+       "ability": "Multiscale",
+       "nature": "Modest",
+       "moves": [
+        "Flamethrower",
+        "Thunderbolt",
+        "Dragon Pulse",
+        "Roost"
+       ],
+       "statPoints": {
+        "hp": 1,
+        "def": 1,
+        "spa": 32,
+        "spe": 32
+       }
+      }
+     },
+     {
+      "entryId": "excadrill",
+      "set": {
+       "item": "Focus Sash",
+       "ability": "Mold Breaker",
+       "nature": "Jolly",
+       "moves": [
+        "Earthquake",
+        "Iron Head",
+        "Megahorn",
+        "Rock Blast"
+       ],
+       "statPoints": {
+        "hp": 2,
+        "atk": 32,
+        "spe": 32
+       }
+      }
+     }
+    ],
+    "vsMix": 0.4998
    }
   ]
  }
