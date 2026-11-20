@@ -411,6 +411,24 @@ servers can be reclaimed by AWS. The pipeline checkpoints per Pokémon (sets) an
 `RESUME_RUN=<run id>` with the same settings continues an interrupted run on a fresh server instead of starting over.
 For a fresh experiment locally, use a new `--out` folder: an old one's checkpoints would be resumed.
 
+Other long jobs (benchmarks, team search, preview checks, tuning against the field, the double oracle) belong on Spot
+too: per vCPU-hour a c7g/c8g.16xlarge Spot machine costs about an eighth of Lambda. Keep Lambda for the app and for
+quick checks. `aws/spot-job.sh` runs one command on a Spot machine and survives reclaims:
+
+```bash
+EXTRA_FILES='out/ladder-bench/chaos-2026-10-1760.json' aws/spot-job.sh start bench-sets \
+  'node sim/ladder-bench.js --stats out/ladder-bench/chaos-2026-10-1760.json --agent rollout4all~v --n 800 --checkpoint out/bench-sets.ckpt --out out/bench-sets.json'
+aws/spot-job.sh watch bench-sets      # relaunches after a reclaim (falls back across instance types) until done
+aws/spot-job.sh fetch bench-sets out/aws-bench-sets
+```
+
+`--checkpoint FILE` (sim/checkpoint.js; ladder-bench, team-bench, team-search, preview-check, tune-field,
+double-oracle) stores battle results as they finish, keyed by the battles themselves. These scripts are deterministic
+given their battle results, so the same command started again replays to where it stopped without playing those
+battles again; put the file under `out/` so it reaches S3 with the 5-minute uploads. For multi-step jobs, ship a small
+script with `EXTRA_FILES` and give each step its own checkpoint file. The watcher gives up after `MAX_LAUNCHES` (20)
+launches or `MAX_BOX_HOURS` (24) machine-hours in total.
+
 With the rollout AI, one process with 64 worker threads exceeds Linux's default limit of 65,530 memory mappings per
 process. That shows up as misleading "JavaScript heap out of memory" crashes even with plenty of RAM free.
 `launch.sh` raises `vm.max_map_count` on the server and logs `[diag] maps=… rssKB=…` every 5 minutes. If you run the

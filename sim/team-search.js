@@ -200,6 +200,7 @@ if (require.main === module) {
 			pool = new LambdaPool({concurrency: Number(arg('concurrency', 600))});
 			await pool.check();
 		} else pool = new (require('./pool').Pool)();
+		pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 		const t0 = Date.now();
 		const log = m => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`);
 		const scale = Number(arg('scale', 1));

@@ -26,6 +26,7 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 		await pool.check();
 		pool.speculate = 3;
 	} else pool = new (require('./pool').Pool)();
+	pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 	const byId = new Map(results.entries.map(e => [e.id, e]));
 	const seen = new Set(), picks = [];
 	for (const t of search.teams.slice().sort((a, b) => b.winRate - a.winRate)) {

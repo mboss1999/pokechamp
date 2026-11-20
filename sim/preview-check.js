@@ -39,6 +39,7 @@ const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 		pool = new LambdaPool({concurrency: Number(arg('concurrency', 600))});
 		await pool.check();
 	} else pool = new (require('./pool').Pool)();
+	pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 	const STRONG = arg('strong', 'rollout4all'); // plain battles' pilot (e.g. rollout4all~v); preview games enumerate the picks
 	const BATTLE_GAMES = Number(arg('battle-games', 20));
 	const report = {opponents: opps.length, teams: []};

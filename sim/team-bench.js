@@ -58,6 +58,7 @@ async function main() {
 		pool = new LambdaPool({concurrency: Number(arg('concurrency', 500))});
 		await pool.check();
 	} else pool = new (require('./pool').Pool)();
+	pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 
 	const teams = [...ours, ...real];
 	const rng = mulberry32(hash('team-bench') + Number(arg('salt', 0)));

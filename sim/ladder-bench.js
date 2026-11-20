@@ -146,6 +146,7 @@ async function main() {
 	} else {
 		pool = new (require('./pool').Pool)();
 	}
+	pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 	const report = {stats: LADDER.info, field: FIELD, agent: AGENT, n: N, results: RESULTS.meta.generatedAt,
 		generatedAt: new Date().toISOString(), subjects: []};
 	const save = () => { fs.mkdirSync(path.dirname(OUT), {recursive: true}); fs.writeFileSync(OUT, JSON.stringify(report, null, 1)); };
