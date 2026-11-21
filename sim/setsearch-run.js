@@ -5,6 +5,7 @@
 //
 //   node sim/setsearch-run.js --ids dragapult,toxicroak --pool lambda --scale 4 --check rollout4all
 //   --ladder-stats chaos.json also tries every move the ladder uses on each entry
+//   --checkpoint FILE makes a run resumable (sim/checkpoint.js), e.g. after a Spot reclaim
 
 const fs = require('fs');
 const path = require('path');
@@ -64,6 +65,7 @@ async function main() {
 		pool = new LambdaPool({concurrency: Number(arg('concurrency', 700))});
 		await pool.check();
 	} else pool = new (require('./pool').Pool)();
+	pool = require('./checkpoint').wrap(pool, arg('checkpoint')); // --checkpoint file: resumable (sim/checkpoint.js)
 	const t0 = Date.now();
 	let extraMoves = null;
 	if (arg('ladder-stats', '')) {

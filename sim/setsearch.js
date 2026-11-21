@@ -21,7 +21,7 @@
 //               - a change that adds or removes a status move must also win with the strong pilot
 //               - status pass: the 3 best-screened status moves get a strong-pilot race in the slot that was
 //                 easiest to replace (the fast pilot's screen is biased against them too)
-//               - final check: the result against the starting set; if clearly worse, the start is kept
+//               - final check: the result against the starting set; if worse (90% sure, or by 2+ points), the start is kept
 //
 // Battles: the subject plus 2 partners (fixed, so the subject always plays) against 6 opponents that pick 3,
 // as in the sets stage. The caller supplies the context sampler.
@@ -325,7 +325,7 @@ class SetSearch {
 			const w = await this.play([base, cur], ctxs, strong);
 			check = paired(w[1], w[0]);
 			check = {agent: strong, diff: +check.diff.toFixed(4), se: +check.se.toFixed(4), n: check.n};
-			if (check.diff + 1.96 * check.se < 0) {
+			if (worse(check)) {
 				this.log(`${entry.id}: ${strong} finds the searched set worse (${(100 * check.diff).toFixed(1)} ± ${(100 * check.se).toFixed(1)}); keeping the start`);
 				check.reverted = true;
 				cur = {...base, key: setKey(base)};
@@ -352,6 +352,13 @@ class SetSearch {
 		return {ok: accept(conf, lenient), conf};
 	}
 }
+
+/**
+ * The final check reverts the search when the strong pilot finds its result worse than the start: 90% sure of it
+ * (one-sided), or by 2 points or more. Every change already won with the fast pilot, so this is a test for the fast
+ * pilot's bias, not for noise; the old 97.5% bar kept a set the strong pilot scored -3.8 +- 1.9 (Indeedee, 2026-11-20).
+ */
+const worse = c => c.diff + 1.282 * c.se < 0 || c.diff <= -0.02;
 
 /** One-sided 95% win; lenient (replacing a redundant move): not worse by half a point, nor significantly. */
 const accept = (c, lenient) => lenient ? c.diff > -0.005 && c.diff + 1.645 * c.se > 0 : c.diff - 1.645 * c.se > 0;
