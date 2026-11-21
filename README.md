@@ -33,14 +33,31 @@ Simulation output folders (`out/`, `out-*/`) are not checked in. The app only ne
    "Copy team" gives Showdown import text.
 
 3. **Draft practice**: pick 3 of your 6 and a lead against an opponent you see only by species, as at team preview
-   in Champions. Use one of your built teams or paste a Showdown team; the opponent is a random meta team or species
-   you paste from the ladder. The simulator analyses the matchup while you think, then tells you what your pick cost
-   in win rate, the best picks, and what the opponent should bring. Analysis levels:
-   - **Quick / Normal** (~2 / ~4 min): every battle piloted by the fast heuristic AI. Fine for a rough read, but
-     judged by a full rollout-AI analysis, Normal's picks lose about 3 points of win rate more than Strong's.
-   - **Strong AI** (15–25 min on an M-series Mac, longer in Low Power Mode): the hybrid solver below, with the rollout
-     AI playing the battles that decide the verdict. If your pick is outside the options it analysed first, it grades
-     your pick on top (about half a minute) when you lock in.
+   in Champions. Lock in and you see what your pick cost in win rate, the best picks, what the opponent should bring,
+   and **why** your pick lost points (`web/draft-explain.js`): the smallest change that fixes it, which of their
+   likely replies the points were lost against, Pokémon the best play brings that you left home (or brought that it
+   never does), their likely Pokémon nothing you brought beats 1v1, and your lead against their likely leads. The
+   verdict always comes from full 3v3 battles; the 1v1 reasons come from the 1v1 matrix in results.json. A cost inside
+   the simulation's noise is shown as "Within noise", not as a mistake. Keys: 1–6 pick, Shift+1–6 lead, Enter lock
+   in, N next, R pick again. Two ways to drill:
+   - **Instant drills**: matchups analysed ahead of time (`web/data/draft-bank.json`, built by `sim/draft-bank.js`):
+     the Strongest teams against real teams top players brought on the ladder. No waiting; unseen drills come first.
+   - **Your teams** (a built team or a pasted Showdown team), analysed live against a random real ladder team
+     (`web/data/ladder-teams.json`) or species you paste. The next matchup is analysed while you review. Levels:
+     - **Quick / Normal**: every battle piloted by the fast heuristic AI. About 15–20 s on Lambda (the app host,
+       `APP_POOL=lambda`), 2–4 min on a laptop. Judged by a full rollout-AI analysis, Normal's picks lose about
+       3 points of win rate more than Strong's.
+     - **Strong AI** (15–25 min on an M-series Mac): the hybrid solver below, with the rollout AI playing the battles
+       that decide the verdict. If your pick is outside the options it analysed first, it grades your pick on top
+       (about half a minute) when you lock in.
+
+   Build the drill bank on a Spot box (resumable), then copy it into `web/data/`:
+   ```bash
+   aws/spot-job.sh start draft-bank-<date> 'node sim/draft-bank.js --replays out/team-bench/replays \
+     --chaos out/ladder-bench/chaos-2026-10-1760.json --per-team 25 --budget strong \
+     --out out/draft-bank.json --ladder-out out/ladder-teams.json --checkpoint out/draft-bank.ckpt'
+   ```
+   (with `EXTRA_FILES` shipping the replays and chaos file). A bank built on older simulation results is ignored by the app.
 
 Your collection is stored in the browser (localStorage). Use **Import / export** to back it up.
 

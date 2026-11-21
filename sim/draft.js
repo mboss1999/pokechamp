@@ -14,6 +14,8 @@
 //   grade   every one of my options against the columns the opponent actually plays at equilibrium,
 //           so any pick (yours included) gets an accurate value
 
+const fs = require('fs');
+const path = require('path');
 const {Battle} = require('pokemon-showdown');
 const {FORMAT_ID} = require('./format');
 const {playOut} = require('./battle');
@@ -43,7 +45,7 @@ const sampleSeed = (base, s) => (base + Math.imul(s + 1, 0x9e3779b1)) >>> 0;
 /** Worker job: one of my options against several of theirs, over the given sample indices. */
 function runJob(job) {
 	const {mine, theirSpecies, row, cols, samples, base, policy, resultsPath} = job;
-	const prior = priorFor(resultsPath);
+	const prior = priorFor(resultsPath && fs.existsSync(resultsPath) ? resultsPath : DEFAULT_RESULTS);
 	const OPTS = options(mine.length);
 	const outs = cols.map(() => []);
 	for (const s of samples) {
@@ -77,8 +79,12 @@ function runJob(job) {
  */
 class DraftMatrix {
 	constructor(pool, mine, theirSpecies, {policy = 'heuristic2', resultsPath = DEFAULT_RESULTS, salt = 0, jobBattles} = {}) {
-		// battles per worker job: big for the fast AI (less overhead), small for slow AIs so every core stays busy
-		jobBattles = jobBattles || (policy.startsWith('rollout') ? 12 : 240);
+		// battles per worker job: big for the fast AI (less overhead), small for slow AIs so every core stays busy.
+		// On Lambda (pool.remote) a job is one invocation, so it must also stay well inside the time limit.
+		jobBattles = jobBattles || (pool.remote ? (policy.startsWith('rollout') ? 4 : 48) : (policy.startsWith('rollout') ? 12 : 240));
+		// the default results file is sent as no path: a path on this machine means nothing on Lambda (whose bundle has
+		// its own copy of web/data/results.json), and every battle there failed on it
+		if (path.resolve(resultsPath) === path.resolve(DEFAULT_RESULTS)) resultsPath = undefined;
 		Object.assign(this, {pool, mine, theirSpecies, policy, resultsPath, jobBattles});
 		this.OPTS = options(mine.length);
 		this.M = this.OPTS.length;
@@ -281,11 +287,19 @@ class StrongDraft {
 
 	/** Value one more of my options (for instance the player's own pick) against the equilibrium replies. */
 	async gradeOption(index, onProgress) {
-		if (this.R.includes(index) || this.extraRows.includes(index)) return this.report();
+		return this.gradeOptions([index], this.opts.grade, onProgress, 1);
+	}
+
+	/**
+	 * Value several of my options against the equilibrium replies, with `samples` strong battles per cell (the drill
+	 * bank grades every option this way, so any pick gets a verdict). priority 1: someone is waiting on it.
+	 */
+	async gradeOptions(indices, samples = this.opts.grade, onProgress, priority = 0) {
+		const todo = indices.filter(i => !this.R.includes(i) && !this.extraRows.includes(i));
+		if (!todo.length) return this.report();
 		const support = this.report().theirMix.map(t => t.index);
-		// priority: the player is waiting on this, possibly while the next matchup is being analysed
-		await this.s.sample([index], support, this.opts.grade, onProgress && (() => onProgress(this.h.battles + STRONG_COST * this.s.battles)), 1);
-		this.extraRows.push(index);
+		await this.s.sample(todo, support, samples, onProgress && (() => onProgress(this.h.battles + STRONG_COST * this.s.battles)), priority);
+		this.extraRows.push(...todo);
 		return this.report();
 	}
 
@@ -314,4 +328,15 @@ async function solveDraftStrong(pool, mine, theirSpecies, opts = {}) {
 	return {...r, matrix: sd.s, solver: sd};
 }
 
-module.exports = {options, previewChoice, runJob, DraftMatrix, solveDraft, StrongDraft, solveDraftStrong, strongDraftCost, STRONG_COST};
+/** The client-facing form of a draft analysis (web/serve.cjs and the drill bank, sim/draft-bank.js). */
+function draftResult(r, budget, mine, theirs) {
+	const A = r.matrix.matrix();
+	return {
+		value: r.value, battles: r.battles, strongBattles: r.strongBattles || 0, budget, strong: !!r.strongBattles,
+		mine: mine.map(s => s.species), theirs,
+		options: r.options.map(o => ({...o, vsTheirs: r.theirMix.map(t => A[o.index][t.index])})),
+		theirMix: r.theirMix,
+	};
+}
+
+module.exports = {draftResult, options, previewChoice, runJob, DraftMatrix, solveDraft, StrongDraft, solveDraftStrong, strongDraftCost, STRONG_COST};

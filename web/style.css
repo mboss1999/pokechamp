@@ -54,7 +54,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .mode button { border: 0; background: var(--panel); padding: 6px 14px; cursor: pointer; color: var(--muted); font-weight: 600; }
 .mode button + button { border-left: 1px solid var(--line); }
 .mode button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
-.tabs { display: flex; gap: 4px; }
+.tabs { display: flex; gap: 4px; max-width: 100%; overflow-x: auto; }
+.tabs button { white-space: nowrap; }
 .tabs button {
 	border: 0; background: none; padding: 10px 14px; cursor: pointer; color: var(--muted);
 	border-bottom: 2px solid transparent; font-weight: 600;
@@ -185,13 +186,27 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; padding
 button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
 .verdict-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .verdict-label { font-weight: 700; font-size: 16px; }
-.verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 8px; }
+.verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; margin-top: 8px; }
+.verdict-grid > div { min-width: 0; overflow-x: auto; }
+#draft .toolbar label { max-width: 100%; min-width: 0; }
+#draft .toolbar label[hidden] { display: none; }
+#draft .toolbar select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 table.mini { font-size: 13px; }
 table.mini th { position: static; }
 table.mini td, table.mini th { padding: 4px 8px; }
 table.mini tr.mine td { background: var(--panel-2); font-weight: 600; }
 .muted { color: var(--muted); }
-.draft-actions { display: flex; gap: 8px; }
+.draft-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.draft-actions .keys { margin: 0 0 0 auto; }
+.why { margin: 10px 0 4px; padding: 10px 12px; background: var(--panel-2); border-radius: 8px; }
+.why h3 { margin: 0 0 6px; }
+.why ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.why li { padding-left: 14px; position: relative; line-height: 1.45; }
+.why li::before { content: ''; position: absolute; left: 0; top: .5em; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.why li.why-bad::before { background: var(--bad); }
+.why li.why-good::before { background: var(--good); }
+.why-cell { font-size: 12px; max-width: 420px; }
+.table-scroll { overflow-x: auto; }
 #dt-history { margin-top: 16px; }
 #dt-history p { margin: 0 0 8px; }
 

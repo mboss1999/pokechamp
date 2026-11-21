@@ -1,6 +1,12 @@
 // Draft practice: pick three and a lead against an opponent you only see by species, then compare your pick
-// with the simulated team preview analysis (sim/draft.js, run through web/serve.cjs).
+// with the simulated team preview analysis and see why it cost what it did (web/draft-explain.js).
+//   Instant drills: matchups analysed ahead of time by the strong AI (web/data/draft-bank.json, sim/draft-bank.js),
+//                   the Strongest teams against real ladder teams. No waiting.
+//   Your team:      your built team (or a pasted one) analysed on demand (sim/draft.js through web/serve.cjs), the
+//                   next matchup prepared in the background while you review.
+// Keys: 1-6 pick / unpick (the first pick leads), Shift+1-6 make lead, Enter lock in, N next matchup, R pick again.
 import {$, esc, pct, sprite, typeBadges, displayName} from './ui.js';
+import {explainPick, oneVsOneTable} from './draft-explain.js';
 
 const HISTORY_KEY = 'champions-draft-history-v1';
 // What a pick costs, in win probability, before it counts as a mistake.
@@ -11,7 +17,10 @@ const VERDICTS = [
 	{max: Infinity, label: 'Blunder', cls: 'bad'},
 ];
 
-let results, getBuiltTeams, entryByKey;
+let results, getBuiltTeams, entryByKey, entryById, vs1;
+let bank = null; // precomputed drills (instant)
+let ladderTeams = null; // real ladder teams' species, for live drills' opponents
+const SEEN_KEY = 'champions-draft-bank-seen-v1';
 let drill = null; // the matchup on screen
 let next = null; // the following matchup, prepared in the background
 let history = loadHistory();
@@ -52,8 +61,12 @@ function parsePasteForDisplay(text) {
 	});
 }
 
-/** A random opponent drawn the way the ladder simulations draw them: stronger Pokémon more often. */
+/**
+ * A random opponent: a real team top players brought on the ladder when we have them (web/data/ladder-teams.json),
+ * else drawn the way the ladder simulations draw them: stronger Pokémon more often.
+ */
 function randomMetaSpecies() {
+	if (ladderTeams && ladderTeams.length) return ladderTeams[Math.floor(Math.random() * ladderTeams.length)].species.slice();
 	const {entries} = results;
 	const w = entries.map(e => Math.exp((e.rating - 1500) / 120));
 	const total = w.reduce((a, b) => a + b, 0);
@@ -70,6 +83,13 @@ function randomMetaSpecies() {
 
 function teamSource() {
 	const v = $('#dt-team').value;
+	if (v.startsWith('bank:')) {
+		const t = bank.teams[Number(v.slice(5))];
+		return {label: t.label, bank: Number(v.slice(5)), mons: t.members.map(m => {
+			const entry = entryById.get(m.entryId);
+			return {species: entry.species, entry, item: m.set.item, moves: m.set.moves};
+		})};
+	}
 	if (v === 'paste') {
 		const text = $('#dt-team-paste').value.trim();
 		const mons = parsePasteForDisplay(text);
@@ -91,17 +111,25 @@ function opponentSource() {
 	return {list: randomMetaSpecies(), random: true};
 }
 
-function renderSetup() {
+/** @param chosen  the player just picked from the menu: keep their choice, even an empty paste box */
+function renderSetup(chosen = false) {
 	const teams = getBuiltTeams();
 	const sel = $('#dt-team');
 	const cur = sel.value;
-	sel.innerHTML = teams.map((t, n) => `<option value="${n}">Team ${n + 1}: ${esc(t.map(m => displayName(m.entry)).join(', '))}</option>`).join('') +
-		`<option value="paste">Paste a Showdown team…</option>`;
+	const banked = bank ? bank.teams.map((t, n) => ({n, t, count: bank.drills.filter(d => d.team === n).length})).filter(x => x.count) : [];
+	sel.innerHTML = (banked.length ? `<optgroup label="Instant drills (${bank.budget === 'strong' ? 'strong AI' : 'fast AI'}, real ladder opponents)">${banked.map(({n, t, count}) =>
+		`<option value="bank:${n}">${esc(t.label)}: ${esc(t.members.map(m => displayName(entryById.get(m.entryId))).join(', '))} · ${count} drills</option>`).join('')}</optgroup>` : '') +
+		`<optgroup label="Your teams (analysed live)">` +
+		teams.map((t, n) => `<option value="${n}">Team ${n + 1}: ${esc(t.map(m => displayName(m.entry)).join(', '))}</option>`).join('') +
+		`<option value="paste">Paste a Showdown team…</option></optgroup>`;
 	// keep the current choice, except an empty "paste" left over from before any team was built
-	const keep = [...sel.options].some(o => o.value === cur) && !(cur === 'paste' && teams.length && !$('#dt-team-paste').value.trim());
-	sel.value = keep ? cur : (teams.length ? '0' : 'paste');
+	const keep = [...sel.options].some(o => o.value === cur) && (chosen || !(cur === 'paste' && (teams.length || banked.length) && !$('#dt-team-paste').value.trim()));
+	sel.value = keep ? cur : (banked.length ? `bank:${banked[0].n}` : teams.length ? '0' : 'paste');
+	const live = !sel.value.startsWith('bank:');
 	$('#dt-team-paste').hidden = sel.value !== 'paste';
-	$('#dt-opp-paste').hidden = $('#dt-opp').value !== 'paste';
+	$('#dt-opp-label').hidden = !live;
+	$('#dt-budget-label').hidden = !live;
+	$('#dt-opp-paste').hidden = !live || $('#dt-opp').value !== 'paste';
 }
 
 // ------------------------------------------------------------------ analysis jobs
@@ -156,7 +184,7 @@ function optionIndex(selected, n) {
  */
 function ensureGraded(d) {
 	const j = d.analysis.job;
-	if (j.status !== 'done' || !j.result.strong || pickedOption(d, j.result) || d.grading) return false;
+	if (j.status !== 'done' || j.instant || !j.result.strong || pickedOption(d, j.result) || d.grading) return false;
 	d.grading = true;
 	d.analysis.job = {status: 'running', progress: 0, message: 'Grading your pick with the strong AI…', grading: true};
 	runJob(d.analysis, `api/draft/${d.analysis.jobId}/grade`, {option: optionIndex(d.selected, d.team.mons.length)})
@@ -164,7 +192,32 @@ function ensureGraded(d) {
 	return true;
 }
 
+// ------------------------------------------------------------------ instant drills
+
+function loadSeen() {
+	try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); }
+}
+const drillKey = d => `${d.team}|${d.theirs.join(',')}`;
+
+/** The next banked drill for this team: unseen ones first, in random order; when all are seen, start over. */
+function bankDrill(team) {
+	const seen = loadSeen();
+	const all = bank.drills.filter(d => d.team === team.bank);
+	let pool = all.filter(d => !seen.has(drillKey(d)) && (!drill || drill.bankDrill !== d));
+	if (!pool.length) {
+		all.forEach(d => seen.delete(drillKey(d)));
+		pool = all.filter(d => !drill || drill.bankDrill !== d);
+		if (!pool.length) pool = all;
+	}
+	const d = pool[Math.floor(Math.random() * pool.length)];
+	seen.add(drillKey(d));
+	try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen])); } catch {}
+	return {team, theirs: d.theirs, random: true, bankDrill: d, selected: [], locked: false,
+		analysis: {job: {status: 'done', result: d.result, instant: true}, listeners: new Set()}};
+}
+
 function newDrill(team, opp, budget) {
+	if (team.bank !== undefined) return bankDrill(team);
 	const d = {team, theirs: opp.list, random: opp.random, budget, selected: [], locked: false};
 	d.analysis = startAnalysis(team, opp.list, budget);
 	d.analysis.listeners.add(() => onAnalysisUpdate(d));
@@ -185,7 +238,7 @@ function onAnalysisUpdate(d) {
 
 /** Once the current analysis is finished, start the next random matchup so it's ready when you are. */
 function prepareNext() {
-	if (!drill || !drill.random || drill.analysis.job.status === 'running' || drill.grading || next) return;
+	if (!drill || drill.bankDrill || !drill.random || drill.analysis.job.status === 'running' || drill.grading || next) return;
 	next = newDrill(drill.team, {list: randomMetaSpecies(), random: true}, drill.budget);
 }
 
@@ -202,6 +255,7 @@ function start() {
 	next = null;
 	drill = newDrill(team, opp, $('#dt-budget').value);
 	renderBoard();
+	prepareNext();
 }
 
 function nextMatchup() {
@@ -258,6 +312,7 @@ function record(d) {
 	history.push({
 		at: Date.now(), team: d.team.label, theirs: d.theirs,
 		pick: name(o.option), best: name(best.option), loss: o.loss, lossSe: o.lossSe, value: o.value, bestValue: best.value,
+		why: whyFor(d, o).points.filter(p => p.tone !== 'info').slice(0, 2).map(p => p.html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')).join(' '),
 	});
 	saveHistory();
 	renderHistory();
@@ -265,12 +320,31 @@ function record(d) {
 
 // ------------------------------------------------------------------ rendering
 
-const verdictFor = loss => VERDICTS.find(v => loss < v.max);
+const UNCLEAR = {label: 'Within noise', cls: 'ok'};
+/** The verdict for a pick; a cost the simulation can't tell from zero isn't called a mistake. */
+const verdictFor = (loss, lossSe = 0) => loss >= VERDICTS[0].max && loss < 1.96 * lossSe ? UNCLEAR : VERDICTS.find(v => loss < v.max);
 const pts = x => `${(x * 100).toFixed(1)}`;
+
+/** Display names and 1v1 lookups for the explanation of a pick (web/draft-explain.js). */
+function whyFor(d, o) {
+	const res = d.analysis.job.result;
+	const ids = d.team.mons.map(m => (m.entry || entryForSet(m)).id);
+	return explainPick(res, o, {
+		names: d.team.mons.map(m => m.entry ? displayName(m.entry) : m.species),
+		oneVsOne: (i, j) => ids[i] ? vs1(ids[i], res.theirs[j]) : null,
+	});
+}
+
+/** The roster entry for a pasted set: its Mega form when it holds that Mega Stone. */
+function entryForSet(m) {
+	const k = key(m.species);
+	return results.entries.find(e => key(e.species) === k && e.megaItem && e.megaItem === m.item) || entryFor(m.species);
+}
 
 function progressHtml(d) {
 	const j = d.analysis.job;
 	if (j.status === 'error') return `<span class="bad">${esc(j.error)}</span>`;
+	if (j.status === 'done' && j.instant) return `Instant drill: analysed ahead of time (${j.result.battles.toLocaleString()} battles${j.result.strong ? `, ${j.result.strongBattles.toLocaleString()} of them by the strong AI` : ''}).`;
 	if (j.status === 'done') return `Analysis ready (${j.result.battles.toLocaleString()} battles${j.result.strong ? `, ${j.result.strongBattles.toLocaleString()} of them by the strong AI` : ''}${j.seconds ? ` in ${j.seconds}s` : ''}).`;
 	return `<span>${j.grading ? 'Grading your pick with the strong AI…' : 'Simulating team preview in the background…'} ${Math.round((j.progress || 0) * 100)}%</span>
 		<div class="bar"><div style="width:${Math.round((j.progress || 0) * 100)}%"></div></div>`;
@@ -326,8 +400,9 @@ function verdictHtml(d) {
 	if (!o) return `<div class="card bad">Couldn't match your pick to the analysis.</div>`;
 	const best = res.options[0];
 	const rank = res.options.indexOf(o) + 1;
-	const v = verdictFor(o.loss);
+	const v = verdictFor(o.loss, o.lossSe);
 	const noisy = o.loss > 0 && o.loss < 1.96 * o.lossSe;
+	const why = whyFor(d, o);
 	const nameOf = opt => `<b>${esc(res.mine[opt[0]])}</b> leading, ${esc(res.mine[opt[1]])} + ${esc(res.mine[opt[2]])}`;
 	const support = res.options.filter(x => x.mix > 0.01);
 	const top = res.options.slice(0, 8);
@@ -337,6 +412,10 @@ function verdictHtml(d) {
 			<span>Your pick (${nameOf(o.option)}) wins about <b>${pct(o.value)}</b>; the best pick wins about <b>${pct(best.value)}</b>.
 			${o.loss > 0.001 ? `It costs ${pts(o.loss)} ± ${pts(1.96 * o.lossSe)} points${noisy ? ' (within the simulation’s noise)' : ''}.` : ''}
 			Rank ${rank} of ${res.options.length}${res.strong ? ' analysed options' : ''}.</span></div>
+		<div class="why">
+			<h3>${why.mistake ? 'Why it cost points' : 'Why it works'}</h3>
+			<ul>${why.points.map(p => `<li class="why-${p.tone}">${p.html}</li>`).join('')}</ul>
+		</div>
 		<p class="hint">Against an opponent who picks well, the best play mixes ${support.length > 1 ? 'these options; they are equally good' : 'nothing: one option is best'}:
 			${support.map(x => `${nameOf(x.option)} (${pct(x.mix)})`).join(' · ')}</p>
 		<div class="verdict-grid">
@@ -355,13 +434,14 @@ function verdictHtml(d) {
 				</tbody></table>
 			</div>
 		</div>
-		<p class="hint">Win rates come from ${res.battles.toLocaleString()} simulated battles with their sets guessed from the meta${res.strong
+		<p class="hint">${esc(why.footnote)} Win rates come from ${res.battles.toLocaleString()} simulated battles with their sets guessed from the meta${res.strong
 			? `. The fast AI screened every pairing, then the strong (rollout) AI played the ${res.strongBattles.toLocaleString()} battles behind these numbers, between your most promising picks and their most dangerous replies`
 			: ', all piloted by the fast heuristic AI, which misjudges some drafts by a couple of points (use Strong for verdicts you can trust)'}.
 			± is a 95% range. Differences of a few points are within the noise at this budget.</p>
 		<div class="draft-actions">
 			<button class="primary" id="dt-next">${drill.random ? 'Next matchup' : 'New random matchup'}</button>
 			<button class="ghost" id="dt-retry">Pick again</button>
+			<span class="hint keys">Keys: 1–6 pick · Shift+1–6 lead · Enter lock in · N next · R pick again</span>
 		</div>
 	</div>`;
 }
@@ -374,29 +454,70 @@ function renderHistory() {
 	}
 	const recent = history.slice(-20).reverse();
 	const avg = history.slice(-20).reduce((s, h) => s + h.loss, 0) / Math.min(20, history.length);
-	const counts = VERDICTS.map(v => history.slice(-20).filter(h => verdictFor(h.loss) === v).length);
+	const counts = [...VERDICTS, UNCLEAR].map(v => history.slice(-20).filter(h => verdictFor(h.loss, h.lossSe) === v).length);
 	box.innerHTML = `<div class="card"><h3>Your last ${recent.length} drafts</h3>
-		<p>Average cost <b>${pts(avg)}</b> points per draft · ${VERDICTS.map((v, i) => `<span class="${v.cls}">${counts[i]} ${v.label.toLowerCase()}</span>`).join(' · ')}</p>
-		<table class="mini"><thead><tr><th>When</th><th>vs</th><th>You</th><th>Best</th><th class="num">Cost</th></tr></thead><tbody>
+		<p>Average cost <b>${pts(avg)}</b> points per draft · ${[...VERDICTS, UNCLEAR].map((v, i) => counts[i] ? `<span class="${v.cls}">${counts[i]} ${v.label.toLowerCase()}</span>` : '').filter(Boolean).join(' · ')}</p>
+		<div class="table-scroll"><table class="mini"><thead><tr><th>When</th><th>vs</th><th>You</th><th>Best</th><th class="num">Cost</th><th>Why</th></tr></thead><tbody>
 		${recent.map(h => {
-			const v = verdictFor(h.loss);
+			const v = verdictFor(h.loss, h.lossSe);
 			return `<tr><td>${new Date(h.at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}</td>
 				<td class="muted">${esc(h.theirs.join(', '))}</td><td>${esc(h.pick.join(', '))}</td><td>${esc(h.best.join(', '))}</td>
-				<td class="num ${v.cls}">${pts(h.loss)}</td></tr>`;
-		}).join('')}</tbody></table>
+				<td class="num ${v.cls}">${pts(h.loss)}</td><td class="muted why-cell">${v === VERDICTS[0] || v === UNCLEAR ? '' : esc(h.why || '')}</td></tr>`;
+		}).join('')}</tbody></table></div>
 		<button class="ghost small" id="dt-clear-history">Clear history</button></div>`;
+}
+
+function onKey(ev) {
+	if (!drill || $('#draft').hidden || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+	if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
+	const digit = /^Digit([1-6])$/.exec(ev.code);
+	if (digit && Number(digit[1]) <= drill.team.mons.length) {
+		const slot = Number(digit[1]) - 1;
+		if (ev.shiftKey) {
+			if (!drill.selected.includes(slot)) toggle(slot);
+			if (drill.selected.includes(slot)) makeLead(slot);
+		} else toggle(slot);
+	} else if (ev.key === 'Enter' && !drill.locked && drill.selected.length === 3) lockIn();
+	else if ((ev.key === 'n' || ev.key === 'N') && drill.locked) nextMatchup();
+	else if ((ev.key === 'r' || ev.key === 'R') && drill.locked) {
+		drill.locked = false;
+		drill.selected = [];
+		renderBoard();
+	} else return;
+	ev.preventDefault();
+}
+
+/** Optional data files: the drill bank and the real ladder teams. */
+async function loadOptional(file) {
+	try {
+		const r = await fetch(file);
+		return r.ok ? await r.json() : null;
+	} catch { return null; }
 }
 
 export function initTrainer(ctx) {
 	results = ctx.results;
 	getBuiltTeams = ctx.getBuiltTeams;
+	entryById = new Map(results.entries.map(e => [e.id, e]));
+	vs1 = oneVsOneTable(results);
+	loadOptional('data/draft-bank.json').then(b => {
+		// a bank built on other simulation results would grade picks with outdated sets: leave it out
+		if (b && b.results === results.meta.generatedAt && b.teams.every(t => t.members.every(m => entryById.has(m.entryId)))) {
+			bank = b;
+			renderSetup();
+		}
+	});
+	loadOptional('data/ladder-teams.json').then(t => {
+		if (t && Array.isArray(t.teams)) ladderTeams = t.teams.filter(x => x.species.every(sp => entryByKey.has(key(sp))));
+	});
+	document.addEventListener('keydown', onKey);
 	entryByKey = new Map();
 	// prefer the non-Mega entry for a species' sprite and types
 	for (const e of results.entries) if (!e.megaItem || !entryByKey.has(key(e.species))) entryByKey.set(key(e.species), e);
 	renderSetup();
 	renderHistory();
-	$('#dt-team').addEventListener('change', renderSetup);
-	$('#dt-opp').addEventListener('change', renderSetup);
+	$('#dt-team').addEventListener('change', () => renderSetup(true));
+	$('#dt-opp').addEventListener('change', () => renderSetup(true));
 	$('#dt-start').addEventListener('click', start);
 	$('#dt-board').addEventListener('click', ev => {
 		const lead = ev.target.closest('[data-lead]');

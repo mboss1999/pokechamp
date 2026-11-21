@@ -61,6 +61,7 @@ class PriorityQueue {
 
 class LambdaPool {
 	constructor({region, concurrency} = {}) {
+		this.remote = true; // battles run elsewhere: callers size jobs for one invocation (sim/draft.js)
 		this.region = region || process.env.AWS_REGION || 'us-east-1';
 		this.size = Number(process.env.LAMBDA_CONCURRENCY) || concurrency || 100;
 		this.host = `lambda.${this.region}.amazonaws.com`;
@@ -231,7 +232,8 @@ class LambdaPool {
 		// rollout pilots take ~60x longer per battle: keep their invocations well inside the time limit
 		const slow = jobs.some(j => j.agents && j.agents.some(a => String(a).startsWith('rollout')));
 		const max = slow ? SLOW_CHUNK : MAX_CHUNK, min = slow ? Math.min(MIN_CHUNK, SLOW_CHUNK) : MIN_CHUNK;
-		const chunk = Math.max(min, Math.min(max, Math.ceil(jobs.length / this.size)));
+		// a team preview job (sim/draft.js) is already a batch of battles sized for Lambda (jobBattles): one per invocation
+		const chunk = jobs.some(j => j.type === 'draft') ? 1 : Math.max(min, Math.min(max, Math.ceil(jobs.length / this.size)));
 		const parts = [];
 		for (let i = 0; i < jobs.length; i += chunk) {
 			const p = new Promise(resolve => {

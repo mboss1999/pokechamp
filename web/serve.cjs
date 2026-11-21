@@ -113,16 +113,8 @@ const DRAFT_BUDGETS = {
 // For development: DRAFT_STRONG_OPTS='{"strong":4,"grade":8}' shrinks the strong analysis to test the app quickly.
 if (process.env.DRAFT_STRONG_OPTS) Object.assign(DRAFT_BUDGETS.strong, JSON.parse(process.env.DRAFT_STRONG_OPTS));
 
-/** The client-facing form of a draft analysis. */
-function draftResult(r, budget, mine, theirs) {
-	const A = r.matrix.matrix();
-	return {
-		value: r.value, battles: r.battles, strongBattles: r.strongBattles || 0, budget, strong: !!r.strongBattles,
-		mine: mine.map(s => s.species), theirs,
-		options: r.options.map(o => ({...o, vsTheirs: r.theirMix.map(t => A[o.index][t.index])})),
-		theirMix: r.theirMix,
-	};
-}
+// loaded on first use, like the rest of the simulator
+const draftResult = (...a) => require('../sim/draft').draftResult(...a);
 
 async function startDraft(req, res) {
 	let body;
@@ -155,6 +147,8 @@ async function startDraft(req, res) {
 			...b, resultsPath: RESULTS,
 			onProgress: battles => { job.progress = Math.min(0.99, battles / expected); },
 		});
+		// failed battles are skipped, not scored, but a cell with none left reads as a draw: don't show a broken analysis
+		if (r.failed > 0.05 * r.battles) throw new Error(`${Math.round(100 * r.failed / r.battles)}% of the simulated battles failed. Try again in a minute.`);
 		job.result = draftResult(r, budget, mine, theirs);
 		// kept server-side (not sent) so the player's own pick can be graded later
 		Object.defineProperty(job, 'solver', {value: r.solver ? {sd: r.solver, budget, mine, theirs} : null, enumerable: false});
