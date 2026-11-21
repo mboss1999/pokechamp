@@ -32,7 +32,7 @@ function wrap(pool, file) {
 	const fd = fs.openSync(file, 'a');
 	const teamIds = new WeakMap();
 	const teamId = t => {
-		if (!t || typeof t !== 'object') return JSON.stringify(t);
+		if (!t || typeof t !== 'object') return String(JSON.stringify(t)); // draft jobs have no a/b teams
 		let id = teamIds.get(t);
 		if (!id) { id = crypto.createHash('sha1').update(JSON.stringify(t)).digest('base64'); teamIds.set(t, id); }
 		return id;

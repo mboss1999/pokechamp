@@ -121,10 +121,15 @@ class DraftMatrix {
 				}
 			}
 		}
-		const res = await this.pool.run(jobs, 1, x => {
-			this.battles += meta[x].cs.length * meta[x].n;
+		// count each job once, whether its results arrived one by one or as a replayed block (sim/checkpoint.js)
+		const counted = new Set();
+		const count = x => { if (!counted.has(x)) { counted.add(x); this.battles += meta[x].cs.length * meta[x].n; } };
+		const res = await this.pool.run(jobs, 1, (x, r) => {
+			const n = Array.isArray(r) && r.length > 1 ? r.length : 1; // a replayed block reports all its jobs at once
+			for (let k = x; k < x + n && k < jobs.length; k++) count(k);
 			if (onProgress) onProgress(this.battles);
 		}, priority);
+		jobs.forEach((_, x) => count(x));
 		res.forEach((out, x) => {
 			const {r, cs, n: m} = meta[x];
 			// a failed job leaves NaN holes, keeping sample indices aligned; they are skipped, not scored
