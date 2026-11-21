@@ -1,4 +1,4 @@
-import {makeScorer, buildTeams, assignSets, showdownText} from './team.js';
+import {makeScorer, buildTeams, withProvenTeams, assignSets, showdownText} from './team.js';
 import {$, esc, pct, pctClass, margin, sprite, typeBadges, displayName, setBox} from './ui.js';
 import {initTrainer} from './trainer.js';
 
@@ -120,7 +120,8 @@ function detailRow(s) {
 	return `<tr class="detail"><td colspan="8"><div class="detail-grid">${cards}</div></td></tr>`;
 }
 
-// Teams currently on screen, each with its member sets and its tuning (precomputed by the server).
+// Teams currently on screen, each with its member sets and its tuning (precomputed by the server). Teams from the
+// Strongest teams tab that the collection can build carry `proven` (their full-battle result against the ladder).
 let shownTeams = [];
 
 function renderTeams(teams) {
@@ -137,10 +138,44 @@ function renderTeams(teams) {
 		box.innerHTML = `<div class="empty">No team could be built from your collection with these settings.</div>`;
 		return;
 	}
-	shownTeams = teams.map(t => ({team: t, members: assignSets(results, t.members), refine: null}));
-	box.innerHTML = shownTeams.map((_, n) => `<section class="team" id="team-${n}">${teamHtml(n)}</section>`).join('');
+	teams = withProvenTeams(results, strategies?.ladder?.teams, owned, teams, {includeMegas: $('#include-megas').checked});
+	shownTeams = teams.map(t => t.proven
+		? {team: t, proven: t.proven, refine: null,
+			members: t.proven.members.map(m => ({entry: results.entries[m.index], set: m.set, isAlt: false}))}
+		: {team: t, members: assignSets(results, t.members), refine: null});
+	reranked = false;
+	drawTeams();
 	trainer?.refresh();
 	if (!DOUBLES) fetchTunings(); // team tuning is singles-only so far
+}
+
+function drawTeams() {
+	const box = $('#team-results');
+	const nProven = shownTeams.filter(st => st.proven).length;
+	const order = DOUBLES ? 'by the quick 1v1 estimate'
+		: reranked ? 'by their win rate in full 6v6 battles against meta teams'
+		: 'by the quick 1v1 estimate until their full-battle tuning finishes, then by their full-battle win rate';
+	const note = (nProven ? `${nProven > 1 ? `Teams 1–${nProven} are` : 'Team 1 is'} on the Strongest teams tab: proven in full battles against the ladder. ` : '') +
+		`${nProven ? 'The others are' : 'Teams are'} ranked ${order}.`;
+	box.innerHTML = `<p class="hint">${note}</p>` +
+		shownTeams.map((_, n) => `<section class="team" id="team-${n}">${teamHtml(n)}</section>`).join('');
+}
+
+// Once every builder team's tuning has finished, rank them by their full-battle win rate against meta teams (every
+// team plays the same validation battles) instead of the 1v1 estimate. Proven teams stay first: their win rates are
+// against a different field (the ladder).
+let reranked = false;
+function rerankByBattles() {
+	if (reranked) return;
+	const builder = shownTeams.filter(st => !st.proven);
+	if (builder.some(st => st.members.length >= 3 && !['done', 'error'].includes(st.refine?.status))) return;
+	if (!builder.some(st => st.refine?.status === 'done')) return; // nothing measured: keep the 1v1 order
+	reranked = true;
+	const rate = st => st.refine?.status === 'done' ? st.refine.result.after.winRate : -1; // unmeasured last
+	const sorted = builder.map((st, i) => ({st, i})).sort((a, b) => rate(b.st) - rate(a.st) || a.i - b.i).map(x => x.st);
+	shownTeams = [...shownTeams.filter(st => st.proven), ...sorted];
+	drawTeams();
+	trainer?.refresh();
 }
 
 // ---- tunings: fetched from the server, which has usually finished them already ----
@@ -149,8 +184,9 @@ let tuneGen = 0;
 async function fetchTunings() {
 	const gen = ++tuneGen;
 	const teams = shownTeams;
-	const askable = teams.filter(st => st.members.length >= 3);
-	if (!askable.length) return;
+	// proven teams are already tuned against the ladder
+	const askable = teams.filter(st => !st.proven && st.members.length >= 3);
+	if (!askable.length) return rerankByBattles();
 	let keys;
 	try {
 		const resp = await fetch('api/tune', {
@@ -165,7 +201,7 @@ async function fetchTunings() {
 	} catch (e) {
 		for (const st of askable) st.refine = {status: 'error', error: e.message};
 		redrawAllTeams();
-		return;
+		return; // no full-battle results to rank by
 	}
 	// follow the ones still in progress until they land
 	while (gen === tuneGen && askable.some(st => st.refine && !['done', 'error'].includes(st.refine.status))) {
@@ -193,12 +229,19 @@ function applyTunings(teams, jobs) {
 			if (job.status === 'done') trainer?.refresh();
 		}
 	});
+	if (teams.every(st => shownTeams.includes(st))) rerankByBattles(); // not for teams a newer build replaced
 }
 
 
 /** The sets to show for a team: tuned ones once a refinement has finished (and kept its changes). */
 function teamMembers(n) {
 	const st = shownTeams[n];
+	if (st.proven) {
+		return st.members.map((m, i) => {
+			const p = st.proven.members[i];
+			return {...m, changes: p.changes || [], usage: p.bringRate !== undefined ? p : null};
+		});
+	}
 	const r = st.refine?.result;
 	return st.members.map((m, i) => {
 		const tuned = r && !r.revertedTuning ? r.members[i] : null;
@@ -222,7 +265,7 @@ function teamHtml(n) {
 	const tuned = st.refine?.result && !st.refine.result.revertedTuning;
 	return `
 		<div class="team-head">
-			<h2>Team ${n + 1}</h2>
+			<h2>Team ${n + 1}${st.proven ? ' <span class="good">· Strongest teams</span>' : ''}</h2>
 			<span class="score" title="Weighted by how strong each opponent is in the simulations">
 				Two solid answers to <b>${pct(sum.covered)}</b> of the meta · average answer margin ${margin(sum.answer)}</span>
 			<div class="spacer"></div>
@@ -232,7 +275,7 @@ function teamHtml(n) {
 		<div class="members">${members.map(m => `<div class="card member${m.changes.length ? ' tuned' : ''}">
 			<div class="mon">${sprite(m.entry)}<div><span class="name">${esc(displayName(m.entry))}</span><br>${typeBadges(m.entry.types)}</div></div>
 			${setBox(m.entry, m.set, {copy: true, note: m.isAlt && !m.changes.length ? 'Alternate item (Item Clause)' : ''})}
-			${m.changes.length ? `<div class="changes"><b>Tuned for this team</b>${m.changes.map(c => `<div>${esc(c)}</div>`).join('')}</div>` : ''}
+			${m.changes.length ? `<div class="changes"><b>Tuned ${st.proven ? 'against the ladder' : 'for this team'}</b>${m.changes.map(c => `<div>${esc(c)}</div>`).join('')}</div>` : ''}
 			${m.usage ? `<div class="usage">Brought ${pct(m.usage.bringRate)} · Leads ${pct(m.usage.leadRate)}</div>` : ''}
 		</div>`).join('')}</div>
 		<div class="card cover-wrap">
@@ -246,7 +289,21 @@ function teamHtml(n) {
 
 const pts = x => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)}`;
 
+function provenPanel(p) {
+	const threats = (p.threats || []).map(t => {
+		const e = results.entries[scorer.index.get(t.entryId)];
+		return e ? `<li>${sprite(e)}${esc(displayName(e))}<span class="pct ${pctClass(t.winRate)}">${pct(t.winRate)}</span></li>` : '';
+	}).join('');
+	return `<div class="refine card done">
+		<div class="refine-text">Wins <b>${pct(p.winRate)}</b>${p.se ? ` ± ${(100 * p.se).toFixed(1)}` : ''} of full 6v6 battles against today's ladder teams
+			<span class="hint">(${p.measure === 'preview game' ? 'strong AI; both sides choose their three as well as possible'
+				: 'strong AI on both sides'}). From the Strongest teams tab, with its tuned sets.</span></div>
+		${threats ? `<details><summary>Toughest ladder Pokémon (your win rate when they were brought)</summary><ul class="mlist">${threats}</ul></details>` : ''}
+	</div>`;
+}
+
 function refinePanel(n) {
+	if (shownTeams[n].proven) return provenPanel(shownTeams[n].proven);
 	if (DOUBLES) return '';
 	const r = shownTeams[n].refine;
 	if (!r || r.status === 'unknown') {
@@ -300,7 +357,8 @@ function build() {
 	const btn = $('#build');
 	btn.disabled = true;
 	btn.textContent = 'Building…';
-	setTimeout(() => {
+	setTimeout(async () => {
+		await loadStrategies();
 		const teams = buildTeams(results, owned, {
 			scorer, teams: 5, includeMegas: $('#include-megas').checked,
 		});
@@ -311,7 +369,16 @@ function build() {
 }
 
 // ---- strongest teams (web/data/strategies.json, from sim/strategies.js) ----
-let strategies;
+let strategies; // undefined: not loaded yet; null: none
+
+async function loadStrategies() {
+	if (strategies !== undefined || DOUBLES) return strategies ?? null;
+	try {
+		const resp = await fetch('data/strategies.json');
+		strategies = resp.ok ? await resp.json() : null;
+	} catch { strategies = null; }
+	return strategies;
+}
 
 function strategyTeamHtml(t, title, score) {
 	const byId = new Map(results.entries.map(e => [e.id, e]));
@@ -333,12 +400,7 @@ function strategyTeamHtml(t, title, score) {
 
 async function renderStrongest() {
 	const box = $('#strongest-results');
-	if (strategies === undefined) {
-		try {
-			const resp = await fetch('data/strategies.json');
-			strategies = resp.ok ? await resp.json() : null;
-		} catch { strategies = null; }
-	}
+	await loadStrategies();
 	if (!strategies) {
 		box.innerHTML = `<div class="empty">No team-level results yet. They come from sim/team-search.js, sim/double-oracle.js and sim/strategies.js.</div>`;
 		return;
@@ -473,6 +535,7 @@ async function main() {
 	saveOwned();
 	wire();
 	renderRankings();
+	if (!DOUBLES) await loadStrategies(); // the Team Builder puts the buildable Strongest teams first
 	// the draft trainer drafts with your built teams (tuned sets included), building them if you haven't yet
 	if (!DOUBLES) trainer = initTrainer({results, getBuiltTeams: () => {
 		if (!shownTeams.length && owned.size) {

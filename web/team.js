@@ -211,6 +211,26 @@ export function buildTeams(results, owned, opts = {}) {
 	return out;
 }
 
+/**
+ * Builder teams plus the measured teams (the Strongest teams tab's ladder teams, strategies.json) that the owned
+ * species can build. Those were scored in full battles, so they go first, as {members, proven: {...team, members:
+ * [{...member, index}]}}; a builder team with the same six species is dropped.
+ */
+export function withProvenTeams(results, ladderTeams, owned, teams, opts = {}) {
+	const {entries} = results;
+	const index = new Map(entries.map((e, i) => [e.id, i]));
+	const proven = [];
+	for (const t of ladderTeams || []) {
+		const members = t.members.map(m => ({...m, index: index.get(m.entryId)}));
+		if (members.some(m => m.index === undefined)) continue;
+		if (members.some(m => !owned.has(entries[m.index].species) || (opts.includeMegas === false && entries[m.index].megaItem))) continue;
+		proven.push({members: members.map(m => m.index), proven: {...t, members}});
+	}
+	const key = t => t.members.map(m => entries[m].species).sort().join('|');
+	const seen = new Set(proven.map(key));
+	return [...proven, ...teams.filter(t => !seen.has(key(t)))];
+}
+
 /** Choose a set for each member so no two share an item (Item Clause). */
 export function assignSets(results, members) {
 	const {entries} = results;
